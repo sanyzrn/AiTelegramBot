@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate exact production targets and webhook authentication
+      - name: Validate production targets, webhook auth, and tone routing
         shell: bash
         run: |
           set -euo pipefail
@@ -38,7 +38,12 @@ jobs:
             test -s "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn source"; exit 1; }
             test -s "supabase/functions/$fn/deno.json" || { echo "::error::Missing $fn Deno config"; exit 1; }
             grep -Fq 'X-Telegram-Bot-Api-Secret-Token' "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn Telegram webhook secret check"; exit 1; }
+            grep -Fq 'tone_modes:true' "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn tone health marker"; exit 1; }
           done
+          grep -Fq "mystic:'🪷 عارفانه'" supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq "'🪷 عارفانه','⚡ کوتاه'" supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'toneGuide(p.tone)' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq 'toneGuide(pref.tone)' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq '[functions.saeed-ai-v7]' supabase/config.toml
           grep -Fq '[functions.saeed-ai-ui]' supabase/config.toml
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
@@ -63,14 +68,14 @@ jobs:
           set -euo pipefail
           supabase functions deploy saeed-ai-ui --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
 
-      - name: Verify both live functions are configured
+      - name: Verify both live functions and tone modes
         shell: bash
         run: |
           set -euo pipefail
           for fn in saeed-ai-v7 saeed-ai-ui; do
             curl --fail --silent --show-error --retry 3 --retry-delay 2 \
               "https://${PROJECT_REF}.supabase.co/functions/v1/${fn}?health=$(date +%s)" \
-              | jq -e '.configured == true' > /dev/null \
-              || { echo "::error::Production health failed for $fn"; exit 1; }
-            echo "$fn production health passed"
+              | jq -e '.configured == true and .tone_modes == true and .version == "7.8-tone-modes"' > /dev/null \
+              || { echo "::error::Production health/tone check failed for $fn"; exit 1; }
+            echo "$fn production health and tone version passed"
           done
