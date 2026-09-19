@@ -2,6 +2,10 @@ name: Import Saeed AI source
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-supabase.yml'
 
 permissions:
   contents: write
