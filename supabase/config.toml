@@ -1,0 +1,6 @@
+# Match the currently deployed Telegram webhook functions. Never remove their own webhook secret verification.
+[functions.saeed-ai-ui]
+verify_jwt = false
+
+[functions.saeed-ai-v7]
+verify_jwt = false
