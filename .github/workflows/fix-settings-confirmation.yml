@@ -1,0 +1,62 @@
+name: Fix Saeed AI settings confirmation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-settings-confirmation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Replace repeated settings prompts with saved confirmations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/functions/saeed-ai-v7/index.ts')
+          source = path.read_text(encoding='utf-8')
+          changes = {
+              "for(const[k,v]of Object.entries(TONES))if(text===v){await save(id,{tone:k});await show(id,chat,'tones');return true;}":
+              "for(const[k,v]of Object.entries(TONES))if(text===v){await save(id,{tone:k,keyboard_page:'settings'});await send(chat,'✅ لحن '+v+' ثبت شد.','settings',id);return true;}",
+              "for(const[k,v]of Object.entries(SIZES))if(text===v){await save(id,{answer_length:k});await show(id,chat,'length');return true;}":
+              "for(const[k,v]of Object.entries(SIZES))if(text===v){await save(id,{answer_length:k,keyboard_page:'settings'});await send(chat,'✅ اندازه پاسخ '+v+' ثبت شد.','settings',id);return true;}",
+              "for(const[k,v]of Object.entries(LANG))if(text===v){await save(id,{language:k});await show(id,chat,'language');return true;}":
+              "for(const[k,v]of Object.entries(LANG))if(text===v){await save(id,{language:k,keyboard_page:'settings'});await send(chat,'✅ زبان '+v+' ثبت شد.','settings',id);return true;}",
+          }
+          for old, new in changes.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one original settings branch; got {count}; stopping without any changes')
+              source = source.replace(old, new, 1)
+          for old, new in changes.items():
+              assert old not in source and source.count(new) == 1
+          assert 'async function navigate(' in source
+          assert "if(text==='✅ تأیید پاک‌کردن'" in source
+          assert "if(admin(id)){const tasks=" in source
+          assert "const TONES = {" in source and "mystic:'🪷 عارفانه'" in source
+          path.write_text(source, encoding='utf-8')
+          print('PASS: tone, response length, and language each save once, confirm selection, and show settings keyboard')
+          PY
+          git diff --check
+          git diff --stat
+      - name: Commit only the processing function change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- supabase/functions/saeed-ai-v7/index.ts
+          git diff --cached --quiet && { echo 'No change; source already fixed.'; exit 0; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: confirm settings selection and return to settings menu'
+          git push origin HEAD:main
