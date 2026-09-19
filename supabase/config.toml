@@ -1,6 +1,7 @@
 # Match the currently deployed Telegram webhook functions. Never remove their own webhook secret verification.
 # Production deployment: search mode resets on greeting, Home, /start, and API failure; JWT flags unchanged.
 # Tone release 7.8: playful, warm witty style and original seventh-century-inspired mystic style.
+# Settings UX: confirm a saved tone, answer length, or language once, then return to Settings.
 [functions.saeed-ai-ui]
 verify_jwt = false
 
