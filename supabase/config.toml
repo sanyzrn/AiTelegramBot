@@ -7,3 +7,7 @@ verify_jwt = false
 
 [functions.saeed-ai-v7]
 verify_jwt = false
+
+[functions.saeed-ai-reminders]
+# Dedicated Vault-based cron token is verified in the function.
+verify_jwt = false
