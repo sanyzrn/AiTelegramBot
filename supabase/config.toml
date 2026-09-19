@@ -1,4 +1,5 @@
 # Match the currently deployed Telegram webhook functions. Never remove their own webhook secret verification.
+# Deployment smoke test: no runtime configuration changed; deploy only these two existing functions.
 [functions.saeed-ai-ui]
 verify_jwt = false
 
