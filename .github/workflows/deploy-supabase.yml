@@ -6,6 +6,7 @@ on:
     paths:
       - 'supabase/functions/saeed-ai-ui/**'
       - 'supabase/functions/saeed-ai-v7/**'
+      - 'supabase/functions/saeed-ai-reminders/**'
       - 'supabase/config.toml'
   workflow_dispatch:
 
@@ -30,25 +31,36 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate production targets, webhook auth, and tone routing
+      - name: Validate production targets, webhook auth and v8 migrations
         shell: bash
         run: |
           set -euo pipefail
-          for fn in saeed-ai-v7 saeed-ai-ui; do
+          for fn in saeed-ai-v7 saeed-ai-ui saeed-ai-reminders; do
             test -s "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn source"; exit 1; }
             test -s "supabase/functions/$fn/deno.json" || { echo "::error::Missing $fn Deno config"; exit 1; }
-            grep -Fq 'X-Telegram-Bot-Api-Secret-Token' "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn Telegram webhook secret check"; exit 1; }
-            grep -Fq 'tone_modes:true' "supabase/functions/$fn/index.ts" || { echo "::error::Missing $fn tone health marker"; exit 1; }
           done
-          grep -Fq "mystic:'🪷 عارفانه'" supabase/functions/saeed-ai-v7/index.ts
-          grep -Fq "'🪷 عارفانه','⚡ کوتاه'" supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'X-Saeed-Cron-Secret' supabase/functions/saeed-ai-reminders/index.ts
+          grep -Fq 'saeed_ai_authenticate_reminder_cron' supabase/functions/saeed-ai-reminders/index.ts
+          grep -Fq 'tone_modes: true' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq 'tone_modes: true' supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'fun_pack: true' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq 'fun_pack: true' supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'mystic: "🪷 عارفانه"' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq '"🪷 عارفانه"' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq 'toneGuide(p.tone)' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq 'toneGuide(pref.tone)' supabase/functions/saeed-ai-ui/index.ts
+          grep -Fq 'saeed_ai_reminders' supabase/functions/saeed-ai-v7/index.ts
+          grep -Fq 'saeed_ai_tasks' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq '[functions.saeed-ai-v7]' supabase/config.toml
           grep -Fq '[functions.saeed-ai-ui]' supabase/config.toml
+          grep -Fq '[functions.saeed-ai-reminders]' supabase/config.toml
+          test -s supabase/migrations/20260920090000_saeed_ai_reminders_tasks.sql
+          test -s supabase/migrations/20260920205000_saeed_ai_v8_preference_states.sql
+          test -s supabase/migrations/20260920205100_saeed_ai_v8_vault_cron_auth.sql
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo '::error::Create SUPABASE_DEPLOY_TOKEN with Edge Functions Read-write scoped only to Saeed AI. Do not reuse the read-only import token.'
-            exit 1
+            echo '::error::Missing project-scoped SUPABASE_DEPLOY_TOKEN'; exit 1
           fi
 
       - name: Install Supabase CLI
@@ -56,11 +68,17 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy processing function first (keep Telegram webhook settings)
+      - name: Deploy processing function first
         shell: bash
         run: |
           set -euo pipefail
           supabase functions deploy saeed-ai-v7 --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
+
+      - name: Deploy Vault-authenticated scheduled reminder dispatcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions deploy saeed-ai-reminders --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
 
       - name: Deploy Telegram webhook gateway last
         shell: bash
@@ -68,14 +86,19 @@ jobs:
           set -euo pipefail
           supabase functions deploy saeed-ai-ui --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
 
-      - name: Verify both live functions and tone modes
+      - name: Verify all three live functions
         shell: bash
         run: |
           set -euo pipefail
           for fn in saeed-ai-v7 saeed-ai-ui; do
             curl --fail --silent --show-error --retry 3 --retry-delay 2 \
               "https://${PROJECT_REF}.supabase.co/functions/v1/${fn}?health=$(date +%s)" \
-              | jq -e '.configured == true and .tone_modes == true and .version == "7.8-tone-modes"' > /dev/null \
-              || { echo "::error::Production health/tone check failed for $fn"; exit 1; }
-            echo "$fn production health and tone version passed"
+              | jq -e '.configured == true and .tone_modes == true and .fun_pack == true and .version == "8.0.1"' > /dev/null \
+              || { echo "::error::Production health failed for $fn"; exit 1; }
+            echo "$fn health passed"
           done
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/saeed-ai-reminders?health=$(date +%s)" \
+            | jq -e '.configured == true and .scheduled_reminders == true and .version == "8.0.1"' > /dev/null \
+            || { echo '::error::Production reminder dispatcher health failed'; exit 1; }
+          echo 'All three production function health checks passed'
