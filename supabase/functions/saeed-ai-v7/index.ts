@@ -358,7 +358,7 @@ async function show(id, chat, page) {
     s = await cfg();
   let body =
     {
-      home: `✨ Saeed AI\n🎭 ${TONES[p.tone] || TONES.friendly} | 📌 ${TOOLS[p.pending_tool] || TOOLS.chat}\n\nمنوی اصلی پایین صفحه‌ست؛ بفرما حاجی 😁`,
+      home: "بفرما حاجی چی تو ذهنته 😁",
       tools: "🧰 جعبه‌ابزار\nگزینه موردنظرت رو از کیبورد پایین انتخاب کن. 😎",
       settings: `⚙️ تنظیمات شخصی\n🎭 ${TONES[p.tone]}\n📏 ${SIZES[p.answer_length]}\n🌐 ${LANG[p.language]}`,
       tones: "🎭 چه لحنی انتخاب می‌کنی؟",
