@@ -1,0 +1,31 @@
+name: Diagnose legacy TypeScript
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/refactor-type-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Diagnose both legacy entrypoints without suppressions
+        shell: bash
+        run: |
+          set -uo pipefail
+          for f in saeed-ai-v7 saeed-ai-ui; do
+            p="supabase/functions/$f/index.ts"
+            sed -i '1{/^\/\/ @ts-nocheck$/d;}' "$p"
+            echo "::group::Full diagnostics for $f"
+            deno check "$p" > "/tmp/$f-types.log" 2>&1
+            status=$?
+            echo "Exit: $status; diagnostics: $(grep -Ec '^error:|^TS[0-9]+|^TS[0-9]+' "/tmp/$f-types.log" || true)"
+            sed -n '1,180p' "/tmp/$f-types.log"
+            echo '::endgroup::'
+          done
