@@ -4,6 +4,7 @@ import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
 import { calculateExact } from "../_shared/calculator.ts";
 import { parseTimerRequest, type TimerRequest } from "../_shared/timer.ts";
+import { voiceFollowupMode, isSpokenRequest } from "../_shared/voice-intent.ts";
 import { unzipSync } from "npm:fflate@0.8.2";
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
@@ -1090,7 +1091,7 @@ async function ai(s, contents, system) {
     },
   };
 }
-async function chooseVoice(m) {
+async function chooseVoice(m, update) {
   const a = m.voice || m.audio;
   if (!a) return;
   const { error } = await db.from("saeed_ai_voice_pending").upsert(
@@ -1105,7 +1106,9 @@ async function chooseVoice(m) {
     { onConflict: "telegram_user_id,telegram_message_id" },
   );
   if (error) throw Error("VOICE_SAVE");
-  await show(m.from.id, m.chat.id, "voice");
+  // Keep the original Telegram message ID for explicit reply transformations.
+  // A voice is executed immediately without making the user pick a button.
+  await startWork(m, update, "execute", "", null);
 }
 async function voiceAction(id, chat, act, update) {
   const { data: item, error } = await db
@@ -1132,22 +1135,8 @@ async function voiceAction(id, chat, act, update) {
     await show(id, chat, "home");
     return;
   }
-  const s = await cfg();
-  if (s.provider === "openrouter") {
-    await send(
-      chat,
-      "🎙 الان از پس پردازش ویس برنمیام؛ متنش رو بفرست یا بعداً امتحان کن. 💛",
-    );
-    return;
-  }
-  const { data: removed } = await db
-    .from("saeed_ai_voice_pending")
-    .delete()
-    .eq("telegram_user_id", id)
-    .eq("telegram_message_id", item.telegram_message_id)
-    .select("file_id")
-    .maybeSingle();
-  if (!removed) return;
+  // Do not consume the stored file: several replies may transform the same voice.
+  // Audio requests use Gemini independently of the selected text-chat provider.
   await save(id, { keyboard_page: "tools" });
   const m = {
     from: { id },
@@ -1214,10 +1203,8 @@ async function startWork(m, update, tool, prompt, override = null) {
     kind = m.voice || m.audio ? "voice" : m.photo ? "photo" : "text",
     med = override || media(m),
     document = doc(m);
-  if (med?.type === "audio" && s.provider === "openrouter") {
-    await send(chat, failMessage("AUDIO_UNSUPPORTED"));
-    return;
-  }
+  // Gemini handles voice even while OpenRouter is the normal chat provider.
+  if (med?.type === "audio") s.provider = "gemini";
   if (med?.type === "image" && s.provider === "openrouter") {
     const [owner, ...rest] = s.openrouter.split("/"),
       r = await fetch(
@@ -1394,7 +1381,14 @@ async function work(
         "Speech-to-text only. No assistant response, no fictional action confirmations.",
       );
       const spoken = String(speech.text || "").trim().slice(0, 3000);
-      if (!spoken) throw Error("VOICE_TRANSCRIPT");
+      if (!spoken) {
+        await send(chat, "🎙 حاجی، صدات رو واضح نگرفتم؛ دوست داری تایپش کنم، خلاصه‌اش کنم یا ترجمه‌اش کنم؟ 💛", "voice", id);
+        await metric(update, id, s, "success", speech.usage);
+        await db.from("saeed_ai_retry").update({ status: "completed" })
+          .eq("original_update_id", original).eq("telegram_user_id", id);
+        await save(id, { pending_tool: "chat", keyboard_page: "voice" });
+        return;
+      }
       let performed = true;
       const timer = parseTimerRequest(spoken);
       if (timer) await scheduleRealTimer(id, chat, timer, update);
@@ -1402,6 +1396,14 @@ async function work(
         await send(chat, "⏰ زمان تایمر رو دقیق متوجه نشدم؛ مثلاً بگو «تایمر هفت دقیقه بذار». چیزی ثبت نکردم.");
       else {
         const intent = await selectToolIntent(spoken, GK, s.gemini);
+        if (intent === "chat" && !isSpokenRequest(spoken)) {
+          await send(chat, "🎙 حاجی، توی این ویس درخواست مشخصی پیدا نکردم. دوست داری تایپش کنم، خلاصه‌اش کنم یا ترجمه‌اش کنم؟ 😁", "voice", id);
+          await metric(update, id, s, "success", speech.usage);
+          await db.from("saeed_ai_retry").update({ status: "completed" })
+            .eq("original_update_id", original).eq("telegram_user_id", id);
+          await save(id, { pending_tool: "chat", keyboard_page: "voice" });
+          return;
+        }
         if (intent === "remind") await setReminder(id, chat, spoken, update);
         else if (intent === "tasks") await saveTasks(id, chat, spoken, update);
         else if (["expenses", "shopping", "briefing"].includes(intent)) {
@@ -1485,13 +1487,7 @@ async function work(
       await sendSpoiler(chat, sp[0].trim(), sp.slice(1).join("").trim());
     } else {
       await deliver(chat, result.text, tool, prompt);
-      if (med?.type === "audio")
-        await send(
-          chat,
-          tool === "execute" ? "📝 پاسخ ویس آماده شد؛ فقط تأییدِ ثبت واقعی یعنی تایمر یا یادآور ساخته شده." : "✅ انجام شد؛ ابزار بعدی رو از پایین انتخاب کن. 😁",
-          "tools",
-          id,
-        );
+      // No redundant "done" message or menu after an actionable voice response.
     }
   } catch (e) {
     const reason = e instanceof Error ? e.message : "ERROR";
@@ -1892,12 +1888,41 @@ async function callbacks(c, update) {
   }
   return show(id, chat, "home");
 }
+async function handleVoiceReply(m, update) {
+  const action = voiceFollowupMode((m.text || "").trim());
+  const replied = m.reply_to_message;
+  if (!action || !replied?.message_id || !(replied.voice || replied.audio)) return false;
+  // Fetch ONLY a still-valid voice uploaded by this same private-chat user.
+  // No fallback to an arbitrary Telegram file_id if ownership or TTL fails.
+  const { data: original, error } = await db.from("saeed_ai_voice_pending")
+    .select("file_id,file_size")
+    .eq("telegram_user_id", m.from.id)
+    .eq("telegram_chat_id", m.chat.id)
+    .eq("telegram_message_id", replied.message_id)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw Error("VOICE_REPLY_LOOKUP");
+  if (!original) {
+    await send(m.chat.id, "⌛ حاجی، دسترسی به اون ویس تموم شده. دوباره بفرست تا برات انجامش بدم. 💛");
+    return true;
+  }
+  const clip = { file_id: original.file_id, file_size: original.file_size };
+  const source = {
+    ...m, text: "", caption: "", reply_to_message: null,
+    voice: replied.voice ? clip : null,
+    audio: replied.audio ? { ...replied.audio, ...clip } : null,
+  };
+  await startWork(source, update, action, "", null);
+  return true;
+}
+
 async function message(m, update) {
   const id = m.from.id,
     chat = m.chat.id,
     text = (m.text || "").trim(),
     p = await pref(id);
   await sweep();
+  if (await handleVoiceReply(m, update)) return;
   if (/^\/(start|menu|help)(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "chat" });
     return show(id, chat, "home");
@@ -1999,7 +2024,7 @@ async function message(m, update) {
     const link = requestText.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?/i);
     if (link) return startWork(m, update, "repo", link[0], null);
   }
-  if (m.voice || m.audio) return chooseVoice(m);
+  if (m.voice || m.audio) return chooseVoice(m, update);
   const d = doc(m),
     med = media(m),
     input = (m.caption || text).trim(),

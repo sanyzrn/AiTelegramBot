@@ -655,6 +655,8 @@ Deno.serve(async (req) => {
         if (c) return forward(update);
         if (!m) return;
         const text = (m.text || "").trim();
+        // Reply transformations must reach the processor with original voice metadata.
+        if (m.reply_to_message?.voice || m.reply_to_message?.audio) return forward(update);
         if (/^صبح[‌\s-]*نامه\s+(?:تست|الان)$/iu.test(text)) return forward(update);
         if (
           MENUS.has(text) ||
