@@ -30,7 +30,7 @@ export function parseTimerRequest(input: string): TimerRequest | null {
   if (!/(?:تایمر|زمان[‌\s-]*سنج|timer)/iu.test(text)) return null;
   if (/(?:چطور|چگونه|چرا|آموزش|کار\s*نمی[‌\s]*کن|تنظیم\s*شد|how\s+to|doesn.t\s+work|\?|؟)/iu.test(text)) return null;
   if (!/(?:بذار|بگذار|بزن|بگیر|تنظیم\s*کن|ست\s*کن|شروع\s*کن|راه\s*بنداز|set|start)/iu.test(text) &&
-      !/^(?:یه\s+|یک\s+)?(?:تایمر|timer)\b?/iu.test(text)) return null;
+      !/^(?:یه\s+|یک\s+)?(?:تایمر|timer)(?:\s|$)/iu.test(text)) return null;
   const match = /([0-9]{1,4}|[آ-ی]+(?:\s+و\s+[آ-ی]+)?)\s*(دقیقه|ساعت|minutes?|hours?)/iu.exec(text);
   if (!match) return null;
   const qty = count(match[1]);
