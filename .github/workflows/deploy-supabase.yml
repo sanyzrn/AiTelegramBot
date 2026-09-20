@@ -36,7 +36,7 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Require complete v9 release, tested shared modules and webhook auth
+      - name: Require complete v9 source and check every module before deploying
         shell: bash
         run: |
           set -euo pipefail
@@ -53,9 +53,18 @@ jobs:
           for migration in 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql; do
             test -s "supabase/migrations/$migration"
           done
+          for fn in saeed-ai-v7 saeed-ai-ui; do
+            test "$(find "supabase/functions/$fn/core" -maxdepth 1 -name '*.ts' | wc -l)" -ge 5
+            if grep -rEn '@ts-nocheck|@ts-ignore|@ts-expect-error' "supabase/functions/$fn/index.ts" "supabase/functions/$fn/core"; then
+              echo "::error::Unchecked TypeScript code in $fn"; exit 1
+            fi
+            deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts" "supabase/functions/$fn/core/"*.ts
+          done
           if grep -En '//[[:space:]]*@ts-(nocheck|ignore)|@[[:space:]]*ts-expect-error' supabase/functions/_shared/*.ts; then
             echo '::error::Shared modules cannot disable type checking'; exit 1
           fi
+          deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
           for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_callback_refresh: true'; do
             grep -Fq "$capability" supabase/functions/saeed-ai-v7/index.ts
           done
@@ -65,9 +74,8 @@ jobs:
           for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_market_weather: true'; do
             grep -Fq "$capability" supabase/functions/saeed-ai-reminders/index.ts
           done
-          deno check supabase/functions/_shared/*.ts
           node --experimental-strip-types --test tests/*.test.mjs
-          echo 'PASS: v9 sources, typechecks, tests and authentication'
+          echo 'PASS: every entrypoint and module typechecked without suppressions, all tests passing'
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
