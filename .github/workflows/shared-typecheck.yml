@@ -1,0 +1,42 @@
+name: Saeed AI Shared Module Typecheck
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shared-typecheck.yml'
+      - 'supabase/functions/_shared/**'
+  pull_request:
+    paths:
+      - '.github/workflows/shared-typecheck.yml'
+      - 'supabase/functions/_shared/**'
+permissions:
+  contents: read
+jobs:
+  shared-types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Reject type checking bypasses in extracted modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -En '//[[:space:]]*@ts-(nocheck|ignore)|@[[:space:]]*ts-expect-error' supabase/functions/_shared/*.ts; then
+            echo '::error::Extracted modules must not bypass the TypeScript checker'
+            exit 1
+          fi
+      - name: Type check isolated modules under Deno
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno check \
+            supabase/functions/_shared/briefing-sources.ts \
+            supabase/functions/_shared/calculator.ts \
+            supabase/functions/_shared/repeat.ts \
+            supabase/functions/_shared/tool-intent.ts \
+            supabase/functions/_shared/intent-model.ts \
+            supabase/functions/_shared/life.ts
+          echo 'PASS: extracted modules typecheck without ts-nocheck'
