@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Apply the natural-language tool routing fix to both existing bot entrypoints.
-Fail if upstream source changes: never silently deploy a partial patch.
+"""Apply natural-language tool routing to both bot entrypoints.
+Fail rather than silently deploying an incomplete patch when upstream code changes.
 """
 from pathlib import Path
 
@@ -10,8 +10,9 @@ BOT = BASE / 'supabase/functions/saeed-ai-v7/index.ts'
 
 
 def replace(source: str, old: str, new: str, label: str) -> str:
-    if source.count(new) == 1 and source.count(old) == 0:
-        return source  # idempotent
+    # Some replacement strings intentionally contain their original anchor.
+    if source.count(new) == 1:
+        return source
     if source.count(old) != 1:
         raise RuntimeError(f'{label}: expected one original anchor, found {source.count(old)}')
     return source.replace(old, new, 1)
@@ -110,8 +111,8 @@ def main() -> None:
     original_bot = BOT.read_text(encoding='utf-8')
     gateway = patch_gateway(original_gateway)
     bot = patch_bot(original_bot)
-    assert patch_gateway(gateway) == gateway
-    assert patch_bot(bot) == bot
+    assert patch_gateway(gateway) == gateway, 'gateway patch must be idempotent'
+    assert patch_bot(bot) == bot, 'processor patch must be idempotent'
     assert 'saeed_auto_tool' in gateway and 'setReminder(id, chat, requestText)' in bot
     assert 'forcedTool === "web"' in gateway and 'provider: "gemini"' in bot
     GATEWAY.write_text(gateway, encoding='utf-8')
