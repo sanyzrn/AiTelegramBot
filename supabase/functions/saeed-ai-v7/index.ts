@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { selectToolIntent } from "../_shared/intent-model.ts";
 import { unzipSync } from "npm:fflate@0.8.2";
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
@@ -1496,11 +1497,8 @@ async function sweep() {
   }
 }
 async function setReminder(id, chat, input) {
-  const s = await cfg();
-  if (s.provider !== "gemini") {
-    await save(id, { pending_tool: "chat" });
-    return send(chat, "⏰ یادآور هوشمند فعلاً با Gemini کار می‌کنه. 💛");
-  }
+  // The parser always uses Gemini, regardless of the conversational provider.
+  const s = { ...(await cfg()), provider: "gemini" };
   const tehran = new Date().toLocaleString("en-US", {
     timeZone: "Asia/Tehran",
   });
@@ -1562,11 +1560,7 @@ async function setReminder(id, chat, input) {
   );
 }
 async function saveTasks(id, chat, input) {
-  const s = await cfg();
-  if (s.provider !== "gemini") {
-    await save(id, { pending_tool: "chat" });
-    return send(chat, "✅ تسک‌خوان فعلاً با Gemini کار می‌کنه. 💛");
-  }
+  const s = { ...(await cfg()), provider: "gemini" };
   const r = await ai(
     s,
     [
@@ -1876,6 +1870,20 @@ async function message(m, update) {
   if (p.pending_tool === "remind" && text) return setReminder(id, chat, text);
   if (p.pending_tool === "tasks" && text) return saveTasks(id, chat, text);
   if (await adminInput(id, chat, text)) return;
+  // A gateway-selected intent is validated against this local allowlist.
+  const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas"]);
+  const requestText = (m.caption || text).trim();
+  const inferred = p.pending_tool === "chat" && requestText
+    ? safeTools.has(m.saeed_auto_tool)
+      ? m.saeed_auto_tool
+      : await selectToolIntent(requestText, GK, (await cfg()).gemini)
+    : "chat";
+  if (inferred === "remind") return setReminder(id, chat, requestText);
+  if (inferred === "tasks") return saveTasks(id, chat, requestText);
+  if (inferred === "repo") {
+    const link = requestText.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?/i);
+    if (link) return startWork(m, update, "repo", link[0], null);
+  }
   if (m.voice || m.audio) return chooseVoice(m);
   const d = doc(m),
     med = media(m),
@@ -1885,9 +1893,11 @@ async function message(m, update) {
     ),
     tool = d
       ? "documents"
-      : p.pending_tool === "chat" && isRepo
-        ? "repo"
-        : p.pending_tool;
+      : inferred !== "chat"
+        ? inferred
+        : p.pending_tool === "chat" && isRepo
+          ? "repo"
+          : p.pending_tool;
   if (m.document && !d)
     return send(chat, "📎 فعلاً DOCX، XLSX، MD، TXT و CSV رو می‌خونم. 😁");
   if (tool === "documents" && !d)

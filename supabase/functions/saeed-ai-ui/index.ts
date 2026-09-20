@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { selectToolIntent } from "../_shared/intent-model.ts";
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
   RK = Deno.env.get("OPENROUTER_API_KEY") || "",
@@ -332,7 +333,7 @@ function searchMessage(reason) {
     return "🌐 مدل پاسخ داد، اما لینک منبع معتبر برنگردوند. برای اینکه منبع ساختگی ندم، نتیجه رو منتشر نکردم. دوباره با سؤال دقیق‌تر امتحان کن. ❤️";
   return "🌐 جست‌وجوی آنلاین فعلاً پاسخ معتبر نداد؛ دوباره امتحان کن. ❤️";
 }
-async function reply(m, update) {
+async function reply(m, update, forcedTool = null) {
   const id = m.from.id,
     chatId = m.chat.id,
     prompt = (m.text || m.caption || "").trim(),
@@ -355,6 +356,7 @@ async function reply(m, update) {
     language: "fa",
     pending_tool: "chat",
   };
+  if (forcedTool === "web") pref.pending_tool = "web";
   const dismissSearch =
     (/^(?:سلا+م|درود|صبح بخیر|شب بخیر|hello\b|hi\b)/iu.test(prompt) &&
       !/(?:جستجو|جست‌وجو|آنلاین|قیمت|خبر|امروز|latest|search|price|news)/iu.test(
@@ -685,6 +687,13 @@ Deno.serve(async (req) => {
           ].includes(p?.pending_tool)
         )
           return forward(update);
+        // The menu is a shortcut, not a prerequisite for using a tool.
+        const inferred = (p?.pending_tool === "chat" || !p?.pending_tool)
+          ? await selectToolIntent(text, GK, (await config()).gemini)
+          : "chat";
+        if (inferred === "web") return reply(m, update.update_id, "web");
+        if (inferred !== "chat")
+          return forward({ ...update, message: { ...m, saeed_auto_tool: inferred } });
         return reply(m, update.update_id);
       } catch (e) {
         console.error("ROUTER", String(e).slice(0, 80));
