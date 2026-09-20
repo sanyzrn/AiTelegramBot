@@ -1,0 +1,45 @@
+name: Saeed AI v9 Regression Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v9-regression.yml'
+      - 'supabase/functions/_shared/**'
+      - 'supabase/functions/saeed-ai-v7/**'
+      - 'supabase/functions/saeed-ai-ui/**'
+      - 'supabase/functions/saeed-ai-reminders/**'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - 'supabase/functions/_shared/**'
+      - 'supabase/functions/saeed-ai-v7/**'
+      - 'supabase/functions/saeed-ai-ui/**'
+      - 'supabase/functions/saeed-ai-reminders/**'
+      - 'tests/**'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute pure calculation, recurrence, ownership and intent tests
+        run: node --experimental-strip-types --test tests/*.test.mjs
+      - name: Prevent accidental destructive task replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/functions/saeed-ai-v7/index.ts').read_text()
+          part=p.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
+          assert '.delete()' not in part, 'saveTasks must append rather than delete'
+          assert 'telegram_update_id: update' in p, 'reminders must deduplicate updates'
+          assert 'handleLifeCallback' in p, 'private callbacks must be wired'
+          assert 'calculateExact' in p, 'exact calculator must be wired'
+          print('PASS: non-destructive task creation and v9 integration guards')
+          PY
