@@ -35,6 +35,15 @@ jobs:
           set -euo pipefail
           npm install --no-save --no-package-lock --ignore-scripts typescript@5.9.3
           node --check scripts/refactor_entrypoints.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/refactor_entrypoints.mjs')
+          s=p.read_text()
+          old='const name=symbols.get(checker.getSymbolAtLocation(node));'
+          new="const name=symbols.get(checker.getSymbolAtLocation(node)) || (ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node && owner.has(node.text) ? node.text : undefined);"
+          assert s.count(old)==1, 'AST transform source changed; review instead of patching silently'
+          p.write_text(s.replace(old,new))
+          PY
           node scripts/refactor_entrypoints.mjs
           git diff --check
           for fn in saeed-ai-v7 saeed-ai-ui; do
