@@ -14,7 +14,7 @@ export function inferToolIntent(text: string): ToolIntent {
   if (/(?:خلاصه\s*کن|summari[sz]e)/iu.test(input)) return "summarize";
   if (/(?:ترجمه\s*کن|translate)/iu.test(input)) return "translate";
   if (/(?:بازنویسی\s*کن|rewrite)/iu.test(input)) return "rewrite";
-  if (/(?:محاسبه\s*کن|حساب\s*کن|calculate|\d\s*[%٪]\s*(?:از|of))/iu.test(input)) return "calc";
+  if (/(?:محاسبه\s*کن|حساب\s*کن|calculate|[\d۰-۹٠-٩]\s*[%٪]\s*(?:از|of)|^[\d۰-۹٠-٩.,٬،\s]+\s*[+*×/÷-]\s*[\d۰-۹٠-٩.,٬،\s]+$)/iu.test(input)) return "calc";
   if (/(?:ایمیل\s*بنویس|متن\s*ایمیل|draft\s+(?:an?\s+)?email)/iu.test(input)) return "email";
   if (/(?:ایده\s*بده|ایده‌پردازی|brainstorm)/iu.test(input)) return "ideas";
   return "chat";
