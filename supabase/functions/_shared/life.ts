@@ -102,7 +102,7 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
   }
   return false;
 }
-export async function handleLifeCallback(c: LifeContext, id: number, chat: number, callback: string): Promise<boolean> {
+export async function handleLifeCallback(c: LifeContext, id: number, chat: number, callback: string, messageId?: number): Promise<boolean> {
   const m = /^(task|shop|reminder):(done|delete|undo|snooze|cancel):(\d{1,16})$/.exec(callback);
   if (!m) return false;
   const key = safeId(m[3]);
@@ -115,9 +115,36 @@ export async function handleLifeCallback(c: LifeContext, id: number, chat: numbe
     return true;
   }
   if (m[1] === "shop") {
-    const { data, error } = await c.db.from("saeed_ai_shopping").update({ done: m[2] === "done" }).eq("id", key).eq("telegram_user_id", id).select("id");
+    const desired = m[2] === "done";
+    const { data, error } = await c.db.from("saeed_ai_shopping")
+      .update({ done: desired }).eq("id", key).eq("telegram_user_id", id)
+      .eq("done", !desired).select("id");
     if (error) throw Error("SHOP_CALLBACK");
-    await c.send(chat, data?.length ? "🛒 لیست خرید به‌روز شد." : "این کالا متعلق به شما نیست.");
+    if (!data?.length) {
+      await c.send(chat, "ℹ️ این دکمه قبلاً استفاده شده یا کالا متعلق به تو نیست. لیست خرید رو دوباره باز کن.");
+      return true;
+    }
+    const { data: items, error: readError } = await c.db.from("saeed_ai_shopping")
+      .select("id,item,done").eq("telegram_user_id", id).order("id").limit(30);
+    if (readError) throw Error("SHOP_REFRESH");
+    const rows = (items || []).map((x: any) => [{
+      text: `${x.done ? "☑️" : "⬜"} ${x.item}`.slice(0, 60),
+      callback_data: `shop:${x.done ? "undo" : "done"}:${x.id}`,
+    }]);
+    const view = {
+      chat_id: chat,
+      text: "🛒 لیست خرید:\n" + ((items || []).map((x: any) => `${x.done ? "✅" : "▫️"} ${x.item}`).join("\n") || "خالیه."),
+      ...(rows.length ? { reply_markup: { inline_keyboard: rows } } : {}),
+    };
+    if (messageId) {
+      try {
+        await c.tg("editMessageText", { ...view, message_id: messageId });
+        return true;
+      } catch (e) {
+        console.error("SHOP_EDIT", String(e).slice(0, 80));
+      }
+    }
+    await c.tg("sendMessage", view);
     return true;
   }
   const { data: r, error: readError } = await c.db.from("saeed_ai_reminders").select("id,telegram_user_id,telegram_chat_id,note,repeat_rule,sent_at,canceled").eq("id", key).eq("telegram_user_id", id).eq("telegram_chat_id", chat).maybeSingle();

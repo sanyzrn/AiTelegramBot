@@ -565,12 +565,15 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "GET" && url.searchParams.has("health"))
     return out({
-      version: "8.0.1",
+      version: "9.0.0",
       configured: ready(),
       tone_modes: true,
       fun_pack: true,
       reminders: true,
       tasks: true,
+      v9_auto_tool_routing: true,
+      v9_voice_reply: true,
+      v9_callback_fast_ack: true,
       profile: true,
       reply_keyboard_gateway: true,
       copyable_blocks: true,
@@ -585,7 +588,7 @@ Deno.serve(async (req) => {
         false,
       );
     return out({
-      version: "8.0.1",
+      version: "9.0.0",
       fun_labels_routed: [
         "⏰ یادآور",
         "🎉 سرگرمی",
@@ -649,6 +652,14 @@ Deno.serve(async (req) => {
     chat = c?.message?.chat || m?.chat;
   if (!user?.id || !(await allowed(user.id, chat)))
     return out({ ok: true, ignored: true });
+  // Acknowledge Telegram's callback immediately, before the slower internal forward.
+  if (c) {
+    try {
+      await tg("answerCallbackQuery", { callback_query_id: c.id });
+    } catch (e) {
+      console.error("CALLBACK_ACK", String(e).slice(0, 80));
+    }
+  }
   EdgeRuntime.waitUntil(
     (async () => {
       try {

@@ -1701,30 +1701,6 @@ async function saveTasks(id, chat, input, update = null) {
 }
 async function listTasks(id, chat) {
   return handleLifeMessage({ db, tg, send }, id, chat, "/tasks", 0);
-  const { data } = await db
-    .from("saeed_ai_tasks")
-    .select("task,done")
-    .eq("telegram_user_id", id)
-    .order("id")
-    .limit(20);
-  const open = (data || []).filter((x) => !x.done);
-  if (!open.length) {
-    await send(
-      chat,
-      "✅ لیست تسکت خالیه! کارهاتو بگو تا برات لیست کنم؛ مثلاً «فردا باید خرید کنم و ماشین رو ببرم تعمیرگاه».",
-      "tasks",
-      id,
-    );
-    return;
-  }
-  await send(
-    chat,
-    "✅ تسک‌های بازت:\n" +
-      open.map((t, i) => "▫️ " + (i + 1) + ". " + t.task).join("\n") +
-      "\n\nتسک جدید به این لیست اضافه می‌شه؛ قبلی‌ها حذف نمی‌شن.",
-    "tasks",
-    id,
-  );
 }
 async function doneTask(id, chat, n) {
   const { data } = await db
@@ -1847,13 +1823,14 @@ async function callbacks(c, update) {
   try {
     await tg("answerCallbackQuery", { callback_query_id: c.id });
   } catch {}
+  // Keep life-action buttons until the original list is edited with fresh state.
+  if (await handleLifeCallback({ db, tg, send }, id, chat, a, c.message.message_id)) return;
   try {
     await tg("editMessageReplyMarkup", {
       chat_id: chat,
       message_id: c.message.message_id,
     });
   } catch {}
-  if (await handleLifeCallback({ db, tg, send }, id, chat, a)) return;
   if (a === "act:md") return exportMd(id, chat);
   if (a.startsWith("retry:")) return retry(id, chat, update);
   if (a.startsWith("voice:")) {
@@ -2053,25 +2030,31 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "GET" && url.searchParams.has("health"))
     return reply({
-      version: "8.0.1",
+      version: "9.0.0",
       configured: ready(),
       tone_modes: true,
       fun_pack: true,
       reminders: true,
       tasks: true,
+      v9_recurring: true,
+      v9_briefings: true,
+      v9_market_weather: true,
+      v9_tasks_append: true,
+      v9_callback_refresh: true,
+      v9_voice_auto: true,
       profile: true,
       calculator: true,
       email_draft: true,
       auto_sweep: true,
       reply_keyboard_only: true,
-      no_inline_output: true,
+      inline_task_shopping_actions: true,
       documents: true,
       voice: true,
       github: true,
     });
   if (req.method === "GET" && url.searchParams.has("selftest"))
     return reply({
-      version: "8.0.1",
+      version: "9.0.0",
       fun_menu:
         rows("fun", false).flat().length === 7 &&
         rows("fun", false).flat().includes("🔮 طالع"),
