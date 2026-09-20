@@ -1,0 +1,372 @@
+/** Saeed AI saeed-ai-v7 ui module. Source moved without behavioral rewrites. */
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { selectToolIntent } from "../../_shared/intent-model.ts";
+import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
+import { calculateExact } from "../../_shared/calculator.ts";
+import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
+import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
+import { unzipSync } from "npm:fflate@0.8.2";
+import { admin, db } from "./state.ts";
+import { cfg, configSet, exportMd, flow, save, stats, testModel } from "./admin.ts";
+import { send } from "./transport.ts";
+import { listTasks, profile } from "./life.ts";
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+
+export const TONES = {
+    friendly: "😊 دوستانه",
+    formal: "👔 رسمی",
+    romantic: "❤️ عاشقانه",
+    professional: "🎯 تخصصی",
+    creative: "🎨 خلاق",
+    witty: "😄 شوخ‌طبع",
+    mystic: "🪷 عارفانه",
+  },
+  SIZES = { short: "⚡ کوتاه", balanced: "📏 متعادل", detailed: "📚 مفصل" },
+  LANG = { fa: "🇮🇷 فارسی", en: "🇬🇧 انگلیسی", auto: "🌐 خودکار" },
+  TOOLS = {
+    chat: "💬 گفتگو",
+    web: "🌐 آنلاین",
+    repo: "💻 GitHub",
+    documents: "📄 فایل‌خوان",
+    image: "🖼 تحلیل عکس",
+    ocr: "🔤 متن عکس",
+    transcribe: "🎙 صوت به متن",
+    summarize: "📝 خلاصه",
+    translate: "🌍 ترجمه",
+    rewrite: "✍️ بازنویسی",
+    ideas: "💡 ایده‌پردازی",
+    remind: "⏰ یادآور",
+    calc: "🧮 ماشین‌حساب",
+    email: "📧 ایمیل نگارش",
+    tasks: "✅ تسک‌ها",
+    horoscope: "🔮 طالع",
+    trivia: "🧠 تست هوش",
+    story: "📖 داستان",
+    joke: "😂 جوک",
+    roast: "🔥 روست",
+  };
+
+export function toneGuide(tone) {
+  if (tone === "witty")
+    return "Be a consistently upbeat, genuinely kind, very playful Iranian-Persian friend. Use lively colloquial banter, clever original jokes and funny observations, warm affection, and natural emojis (usually 1-3, more when the user is playful). Say حاجی occasionally when it fits, not in every reply. Answer the actual request first; do not become a repetitive comedian, invent facts, or make fun of the user. For grief, illness, danger or distress be sincerely gentle instead of cracking jokes. Honor explicitly requested formal writing and preserve technical accuracy.";
+  if (tone === "mystic")
+    return "Reply in original Persian prose inspired by seventh-century Hijri (thirteenth-century) Sufi literature: musical, luminous, tender, contemplative and subtly poetic, with elegant old-fashioned diction and original metaphors of the heart, light and the journey. Address the user as ای دوست when natural. Occasionally compose an ORIGINAL short verse if the request welcomes poetry; never quote or attribute invented lines to Rumi, Saadi or another poet. Answer the concrete question accurately and intelligibly; keep code, URLs, numbers and safety advice plain and precise. Be gentle with sensitive topics.";
+  return "Follow the selected tone naturally without sacrificing accuracy or the requested output format.";
+}
+
+export const MENU = {
+  home: [["💬 گفتگو", "🧰 ابزارها"], ["⚙️ تنظیمات"]],
+  tools: [
+    ["🌐 آنلاین", "💻 GitHub"],
+    ["📄 فایل‌خوان", "🖼 تحلیل عکس"],
+    ["🔤 متن عکس", "🎙 صوت به متن"],
+    ["📝 خلاصه", "🌍 ترجمه"],
+    ["✍️ بازنویسی", "💡 ایده‌پردازی"],
+    ["⏰ یادآور", "🧮 ماشین‌حساب"],
+    ["📧 ایمیل نگارش", "✅ تسک‌ها"],
+    ["📋 پروفایل من", "🎉 سرگرمی"],
+    ["📄 خروجی MD", "💬 گفتگو"],
+    ["🏠 خانه"],
+  ],
+  fun: [
+    ["🔮 طالع", "🧠 تست هوش"],
+    ["📖 داستان", "😂 جوک"],
+    ["🔥 روست"],
+    ["🧰 ابزارها", "🏠 خانه"],
+  ],
+  tasks: [["🗑 پاک‌کردن تسک‌ها"], ["🧰 ابزارها", "🏠 خانه"]],
+  settings: [
+    ["🎭 لحن", "📏 اندازه پاسخ"],
+    ["🌐 زبان", "🧠 حریم خصوصی"],
+    ["🏠 خانه"],
+  ],
+  tones: [
+    ["😊 دوستانه", "👔 رسمی"],
+    ["❤️ عاشقانه", "🎯 تخصصی"],
+    ["🎨 خلاق", "😄 شوخ‌طبع"],
+    ["🪷 عارفانه"],
+    ["⚙️ تنظیمات", "🏠 خانه"],
+  ],
+  length: [["⚡ کوتاه", "📏 متعادل"], ["📚 مفصل"], ["⚙️ تنظیمات", "🏠 خانه"]],
+  language: [
+    ["🇮🇷 فارسی", "🇬🇧 انگلیسی"],
+    ["🌐 خودکار"],
+    ["⚙️ تنظیمات", "🏠 خانه"],
+  ],
+  privacy: [["🗑 پاک‌کردن حافظه"], ["⚙️ تنظیمات", "🏠 خانه"]],
+  reset: [["✅ تأیید پاک‌کردن", "❌ انصراف"]],
+  admin: [
+    ["👥 کاربران", "🤖 مدل‌ها"],
+    ["📊 سهمیه روزانه", "📈 آمار و خطاها"],
+    ["⚙️ تنظیمات", "🏠 خانه"],
+  ],
+  users: [
+    ["➕ افزودن کاربر", "🚫 حذف کاربر"],
+    ["🛡 مدیریت", "🏠 خانه"],
+  ],
+  models: [
+    ["🟢 Gemini", "🔵 OpenRouter"],
+    ["✏️ مدل Gemini", "✏️ مدل OpenRouter"],
+    ["↩️ پیش‌فرض Gemini", "↩️ پیش‌فرض OpenRouter"],
+    ["🛡 مدیریت", "🏠 خانه"],
+  ],
+  quota: [
+    ["✏️ سقف پیش‌فرض", "👤 سهمیه کاربر"],
+    ["🛡 مدیریت", "🏠 خانه"],
+  ],
+  voice: [
+    ["/transcribe 📝 تایپ متن", "/voice_summary ⚡ خلاصه"],
+    ["/voice_translate 🌍 ترجمه", "/voice_execute 🚀 انجام درخواست"],
+    ["❌ انصراف"],
+  ],
+  retry: [["/retry 🔄 تلاش مجدد"], ["🏠 خانه"]],
+};
+
+export function rows(page, isAdmin) {
+  const r = (MENU[page] || MENU.home).map((x) => [...x]);
+  if (page === "settings" && isAdmin) r.splice(2, 0, ["🛡 مدیریت"]);
+  return r;
+}
+
+export const keyboard = (page, isAdmin) => ({
+  keyboard: rows(page, isAdmin).map((row) => row.map((text) => ({ text }))),
+  resize_keyboard: true,
+  is_persistent: false,
+  one_time_keyboard: true,
+  input_field_placeholder: "پیامت رو بنویس حاجی… 💬",
+});
+
+export async function show(id, chat, page) {
+  if (["admin", "users", "models", "quota"].includes(page) && !admin(id))
+    return;
+  const p = await save(id, { keyboard_page: page }),
+    s = await cfg();
+  let body =
+    {
+      home: "بفرما حاجی چی تو ذهنته 😁",
+      tools: "🧰 جعبه‌ابزار\nگزینه موردنظرت رو از کیبورد پایین انتخاب کن. 😎",
+      settings: `⚙️ تنظیمات شخصی\n🎭 ${TONES[p.tone]}\n📏 ${SIZES[p.answer_length]}\n🌐 ${LANG[p.language]}`,
+      tones: "🎭 چه لحنی انتخاب می‌کنی؟",
+      length: "📏 اندازه جواب رو انتخاب کن.",
+      language: "🌐 زبان رو انتخاب کن.",
+      privacy:
+        "🔒 گفت‌وگوها فقط حدود ۱۵ دقیقه برای ادامه چت خونده می‌شن و به‌صورت دوره‌ای خودکار از دیتابیس پاک می‌شن؛ پیام‌های خود تلگرام باقی می‌مونن.",
+      fun: "🎉 سرگرمی با Saeed AI 🎪\nیه گزینه رو انتخاب کن تا شروع کنیم! 😁",
+      tasks: "✅ مدیر تسک‌ها\nکارهاتو بگو تا برات لیست کنم.",
+      reset: "⚠️ مطمئنی می‌خوای تاریخچه خودت رو پاک کنی؟",
+      admin: "🛡 پنل مدیریت Saeed AI 👑",
+      users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
+      models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}`,
+      quota: `📊 سقف پیش‌فرض روزانه: ${s.daily === 0 ? "نامحدود" : s.daily + " پیام"}`,
+      voice: "🎙 ویست رسید. از دکمه‌های پایین انتخاب کن چی کارش کنم. 😁",
+      retry: "🙈 فعلاً پاسخت آماده نشد. از پایین «تلاش مجدد» رو بزن.",
+    }[page] || "🏠 خانه";
+  if (page === "users") {
+    const { data } = await db
+      .from("telegram_bot_user_access")
+      .select("telegram_user_id,enabled,daily_limit")
+      .order("telegram_user_id")
+      .limit(40);
+    body +=
+      "\n\n" +
+      (data || [])
+        .map(
+          (x) =>
+            (x.enabled ? "✅ " : "🚫 ") +
+            x.telegram_user_id +
+            " | " +
+            (x.daily_limit ?? "پیش‌فرض"),
+        )
+        .join("\n");
+  }
+  await send(chat, body, page, id);
+}
+
+export async function navigate(id, chat, text, p) {
+  const pages = {
+    "🏠 خانه": "home",
+    "🧰 ابزارها": "tools",
+    "⚙️ تنظیمات": "settings",
+    "🎭 لحن": "tones",
+    "📏 اندازه پاسخ": "length",
+    "🌐 زبان": "language",
+    "🧠 حریم خصوصی": "privacy",
+    "🗑 پاک‌کردن حافظه": "reset",
+    "🛡 مدیریت": "admin",
+    "👥 کاربران": "users",
+    "🤖 مدل‌ها": "models",
+    "📊 سهمیه روزانه": "quota",
+    "🎉 سرگرمی": "fun",
+    "✅ تسک‌ها": "tasks",
+  };
+  if (pages[text]) {
+    if (pages[text] === "home") await save(id, { pending_tool: "chat" });
+    if (pages[text] === "tasks") {
+      await save(id, { pending_tool: "tasks" });
+      await listTasks(id, chat);
+      return true;
+    }
+    await show(id, chat, pages[text]);
+    return true;
+  }
+  if (text === "⏰ یادآور") {
+    await save(id, { pending_tool: "remind" });
+    const { data: rems } = await db
+      .from("saeed_ai_reminders")
+      .select("note,remind_at")
+      .eq("telegram_user_id", id)
+      .eq("sent", false)
+      .order("remind_at")
+      .limit(8);
+    await send(
+      chat,
+      (rems?.length
+        ? "⏰ یادآورهای فعالت:\n" +
+          rems
+            .map(
+              (x) =>
+                "▫️ " +
+                x.note +
+                " — " +
+                new Date(x.remind_at).toLocaleString("fa-IR", {
+                  timeZone: "Asia/Tehran",
+                }),
+            )
+            .join("\n") +
+          "\n\n"
+        : "") +
+        "یادآور جدیدت رو بنویس؛ مثلاً «۴۵ دقیقه دیگه قابلمه رو خاموش کن» 😉",
+      "tools",
+      id,
+    );
+    return true;
+  }
+  if (text === "🗑 پاک‌کردن تسک‌ها") {
+    await db.from("saeed_ai_tasks").delete().eq("telegram_user_id", id);
+    await save(id, { pending_tool: "chat" });
+    await send(chat, "🗑 لیست تسک‌ها کامل خالی شد. ✨", "tools", id);
+    return true;
+  }
+  if (text === "📋 پروفایل من") {
+    await profile(id, chat);
+    return true;
+  }
+  if (text === "❌ انصراف") {
+    await db.from("saeed_ai_voice_pending").delete().eq("telegram_user_id", id);
+    await db
+      .from("telegram_bot_admin_flow")
+      .delete()
+      .eq("telegram_user_id", id);
+    await save(id, { pending_tool: "chat" });
+    await show(id, chat, "home");
+    return true;
+  }
+  if (text === "✅ تأیید پاک‌کردن" && p.keyboard_page === "reset") {
+    await db
+      .from("telegram_chat_messages")
+      .delete()
+      .eq("telegram_user_id", id)
+      .eq("telegram_chat_id", chat);
+    await save(id, { pending_tool: "chat" });
+    await show(id, chat, "home");
+    return true;
+  }
+  for (const [k, v] of Object.entries(TONES))
+    if (text === v) {
+      await save(id, { tone: k, keyboard_page: "settings" });
+      await send(chat, "✅ لحن " + v + " ثبت شد.", "settings", id);
+      return true;
+    }
+  for (const [k, v] of Object.entries(SIZES))
+    if (text === v) {
+      await save(id, { answer_length: k, keyboard_page: "settings" });
+      await send(chat, "✅ اندازه پاسخ " + v + " ثبت شد.", "settings", id);
+      return true;
+    }
+  for (const [k, v] of Object.entries(LANG))
+    if (text === v) {
+      await save(id, { language: k, keyboard_page: "settings" });
+      await send(chat, "✅ زبان " + v + " ثبت شد.", "settings", id);
+      return true;
+    }
+  if (text === "📄 خروجی MD") {
+    await exportMd(id, chat);
+    return true;
+  }
+  if (admin(id)) {
+    const tasks = {
+      "➕ افزودن کاربر": "add_user",
+      "🚫 حذف کاربر": "remove_user",
+      "✏️ سقف پیش‌فرض": "set_daily_default",
+      "👤 سهمیه کاربر": "set_daily_user",
+      "✏️ مدل Gemini": "add_model",
+      "✏️ مدل OpenRouter": "add_openrouter_model",
+    };
+    if (tasks[text]) {
+      await flow(id, tasks[text]);
+      await send(
+        chat,
+        tasks[text] === "set_daily_user"
+          ? "شناسه و سهمیه رو بفرست، مثلاً 123456789:40"
+          : tasks[text].includes("model")
+            ? "شناسه مدل رو بفرست؛ اول اتصالش رو تست می‌کنم."
+            : "شناسه یا عدد موردنظر رو بفرست.",
+      );
+      return true;
+    }
+    if (text === "🟢 Gemini" || text === "🔵 OpenRouter") {
+      const s = await cfg(),
+        provider = text === "🟢 Gemini" ? "gemini" : "openrouter";
+      try {
+        await testModel(provider, s[provider]);
+        await configSet("provider", provider);
+        await show(id, chat, "models");
+      } catch {
+        await send(chat, "🙈 اتصال برقرار نشد؛ سرویس قبلی حفظ شد.");
+      }
+      return true;
+    }
+    if (text === "↩️ پیش‌فرض Gemini" || text === "↩️ پیش‌فرض OpenRouter") {
+      const provider = text.endsWith("Gemini") ? "gemini" : "openrouter",
+        model =
+          provider === "gemini"
+            ? "gemini-3.5-flash-lite"
+            : "google/gemma-4-26b-a4b-it:free";
+      try {
+        await testModel(provider, model);
+        await configSet(
+          provider === "gemini" ? "model" : "openrouter_model",
+          model,
+        );
+        await show(id, chat, "models");
+      } catch {
+        await send(chat, "🙈 مدل پیش‌فرض پاسخ نداد؛ تنظیم قبلی حفظ شد.");
+      }
+      return true;
+    }
+    if (text === "📈 آمار و خطاها") {
+      await stats(id, chat);
+      return true;
+    }
+  }
+  for (const [k, v] of Object.entries(TOOLS))
+    if (text === v) {
+      await save(id, { pending_tool: k });
+      await send(
+        chat,
+        k === "repo"
+          ? "💻 لینک مخزن عمومی GitHub رو بفرست."
+          : k === "documents"
+            ? "📄 فایل Word، Excel یا Markdown رو بفرست."
+            : k === "web"
+              ? "🌐 موضوعی که باید آنلاین بررسی کنم رو بنویس."
+              : k === "calc"
+                ? "🧮 محاسبه یا مسئله‌ات رو بنویس؛ مرحله‌به‌مرحله حلش می‌کنم."
+                : k === "email"
+                  ? "📧 موضوع و نکات کلیدی ایمیل رو بنویس؛ برات آماده‌اش می‌کنم."
+                  : "✅ " + v + " فعال شد؛ پیام یا فایل بعدی رو بفرست.",
+      );
+      return true;
+    }
+  return false;
+}

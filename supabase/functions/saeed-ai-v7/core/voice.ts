@@ -1,0 +1,100 @@
+/** Saeed AI saeed-ai-v7 voice module. Source moved without behavioral rewrites. */
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { selectToolIntent } from "../../_shared/intent-model.ts";
+import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
+import { calculateExact } from "../../_shared/calculator.ts";
+import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
+import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
+import { unzipSync } from "npm:fflate@0.8.2";
+import { db } from "./state.ts";
+import { startWork } from "./work.ts";
+import { send } from "./transport.ts";
+import { show } from "./ui.ts";
+import { save } from "./admin.ts";
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+
+export async function chooseVoice(m, update) {
+  const a = m.voice || m.audio;
+  if (!a) return;
+  const { error } = await db.from("saeed_ai_voice_pending").upsert(
+    {
+      telegram_user_id: m.from.id,
+      telegram_chat_id: m.chat.id,
+      telegram_message_id: m.message_id,
+      file_id: a.file_id,
+      file_size: a.file_size,
+      expires_at: new Date(Date.now() + 900000).toISOString(),
+    },
+    { onConflict: "telegram_user_id,telegram_message_id" },
+  );
+  if (error) throw Error("VOICE_SAVE");
+  // Keep the original Telegram message ID for explicit reply transformations.
+  // A voice is executed immediately without making the user pick a button.
+  await startWork(m, update, "execute", "", null);
+}
+
+export async function voiceAction(id, chat, act, update) {
+  const { data: item, error } = await db
+    .from("saeed_ai_voice_pending")
+    .select("*")
+    .eq("telegram_user_id", id)
+    .eq("telegram_chat_id", chat)
+    .gt("expires_at", new Date().toISOString())
+    .order("telegram_message_id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw Error("VOICE_READ");
+  if (!item) {
+    await send(chat, "⌛ ویس قبلی منقضی شده؛ دوباره بفرست.");
+    await show(id, chat, "tools");
+    return;
+  }
+  if (act === "cancel") {
+    await db
+      .from("saeed_ai_voice_pending")
+      .delete()
+      .eq("telegram_user_id", id)
+      .eq("telegram_message_id", item.telegram_message_id);
+    await show(id, chat, "home");
+    return;
+  }
+  // Do not consume the stored file: several replies may transform the same voice.
+  // Audio requests use Gemini independently of the selected text-chat provider.
+  await save(id, { keyboard_page: "tools" });
+  const m = {
+    from: { id },
+    chat: { id: chat, type: "private" },
+    message_id: item.telegram_message_id,
+    voice: { file_id: item.file_id, file_size: item.file_size },
+    text: "",
+  };
+  await startWork(m, update, act, "", null);
+}
+
+export async function handleVoiceReply(m, update) {
+  const action = voiceFollowupMode((m.text || "").trim());
+  const replied = m.reply_to_message;
+  if (!action || !replied?.message_id || !(replied.voice || replied.audio)) return false;
+  // Fetch ONLY a still-valid voice uploaded by this same private-chat user.
+  // No fallback to an arbitrary Telegram file_id if ownership or TTL fails.
+  const { data: original, error } = await db.from("saeed_ai_voice_pending")
+    .select("file_id,file_size")
+    .eq("telegram_user_id", m.from.id)
+    .eq("telegram_chat_id", m.chat.id)
+    .eq("telegram_message_id", replied.message_id)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw Error("VOICE_REPLY_LOOKUP");
+  if (!original) {
+    await send(m.chat.id, "⌛ حاجی، دسترسی به اون ویس تموم شده. دوباره بفرست تا برات انجامش بدم. 💛");
+    return true;
+  }
+  const clip = { file_id: original.file_id, file_size: original.file_size };
+  const source = {
+    ...m, text: "", caption: "", reply_to_message: null,
+    voice: replied.voice ? clip : null,
+    audio: replied.audio ? { ...replied.audio, ...clip } : null,
+  };
+  await startWork(source, update, action, "", null);
+  return true;
+}
