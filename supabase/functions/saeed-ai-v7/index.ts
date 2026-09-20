@@ -147,8 +147,8 @@ function rows(page, isAdmin) {
 const keyboard = (page, isAdmin) => ({
   keyboard: rows(page, isAdmin).map((row) => row.map((text) => ({ text }))),
   resize_keyboard: true,
-  is_persistent: true,
-  one_time_keyboard: false,
+  is_persistent: false,
+  one_time_keyboard: true,
   input_field_placeholder: "پیامت رو بنویس حاجی… 💬",
 });
 let HOOK = "";
