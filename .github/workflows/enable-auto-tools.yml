@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/enable-auto-tools.yml'
+      - 'scripts/enable_auto_tool_routing.py'
   workflow_dispatch:
 
 permissions:
