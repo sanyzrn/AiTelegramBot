@@ -1,9 +1,14 @@
+import { parseTimerRequest } from "./timer.ts";
 export type ToolIntent = "chat" | "remind" | "tasks" | "web" | "repo" | "summarize" | "translate" | "rewrite" | "calc" | "email" | "ideas" | "expenses" | "shopping" | "briefing";
 /** Classify only explicit current requests, never treat examples or questions as actions. */
 export function inferToolIntent(text: string): ToolIntent {
   const input = text.trim();
   if (/^(?:سلام|درود|hello|hi)[!؟?.،\s]*$/iu.test(input)) return "chat";
   if (/(?:چطور|چگونه|آموزش|مثال|how\s+to)/iu.test(input)) return "chat";
+  if (parseTimerRequest(input)) return "remind";
+  if (/(?:تایمر|زمان[‌\s-]*سنج|timer)/iu.test(input) &&
+      /(?:بذار|بگذار|بزن|تنظیم\s*کن|ست\s*کن|شروع\s*کن|set\s+(?:a\s+)?timer|start\s+(?:a\s+)?timer)/iu.test(input) &&
+      !/(?:چرا|کار\s*نمی[‌\s]*کن|\?|؟)/iu.test(input)) return "remind";
   if (/^(?:\/briefing|صبح[‌\s-]*نامه)/iu.test(input)) return "briefing";
   if (/^(?:\/shopping|لیست\s+خرید|به\s+لیست\s+خرید\s+اضافه\s+کن|خرید[‌\s-]*هام)/iu.test(input)) return "shopping";
   if (/^(?:\/expense|\/expenses|\/spend|خرج\s+|خرج[‌\s-]*هام|گزارش\s+خرج)/iu.test(input) || /^(?:ناهار|شام|صبحانه|بنزین|تاکسی|قهوه|خوراک|خرید|قبض|کرایه|اجاره|دارو|نان|سوخت|پارکینگ|سوپرمارکت)\s+[۰-۹٠-٩\d,٬،]+(?:\s*(?:هزار|میلیون))?\s*(?:تومان|تومن|ریال)?$/iu.test(input)) return "expenses";
