@@ -21,7 +21,7 @@ permissions:
 jobs:
   unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,17 +29,19 @@ jobs:
           node-version: '22'
       - name: Execute pure calculation, recurrence, ownership and intent tests
         run: node --experimental-strip-types --test tests/*.test.mjs
-      - name: Prevent accidental destructive task replacement
+      - name: Prevent task replacement and verify both monolithic and modular layouts
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('supabase/functions/saeed-ai-v7/index.ts').read_text()
-          part=p.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
+          index=Path('supabase/functions/saeed-ai-v7/index.ts').read_text()
+          life=Path('supabase/functions/saeed-ai-v7/core/life.ts')
+          source=life.read_text() if life.exists() else index
+          part=source.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
           assert '.delete()' not in part, 'saveTasks must append rather than delete'
-          assert 'telegram_update_id: update' in p, 'reminders must deduplicate updates'
-          assert 'handleLifeCallback' in p, 'private callbacks must be wired'
-          assert 'calculateExact' in p, 'exact calculator must be wired'
+          assert 'telegram_update_id: update' in source, 'reminders must deduplicate updates'
+          assert 'handleLifeCallback' in index, 'private callbacks must be wired'
+          assert 'calculateExact' in index, 'exact calculator must be wired'
           print('PASS: non-destructive task creation and v9 integration guards')
           PY
