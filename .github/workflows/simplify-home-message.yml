@@ -1,0 +1,70 @@
+name: Update Saeed AI Home Greeting
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/simplify_home_message.py'
+      - '.github/workflows/simplify-home-message.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: saeed-ai-home-greeting
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_DEPLOY_TOKEN }}
+      PROJECT_REF: zurfsjfulddkjiicegxh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Apply exact one-line edit and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/simplify_home_message.py
+          git diff --check
+          git diff -- supabase/functions/saeed-ai-v7/index.ts > /tmp/home-first.diff
+          test -s /tmp/home-first.diff
+          python3 scripts/simplify_home_message.py
+          git diff -- supabase/functions/saeed-ai-v7/index.ts > /tmp/home-second.diff
+          cmp /tmp/home-first.diff /tmp/home-second.diff
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('supabase/functions/saeed-ai-v7/index.ts').read_text()
+          assert text.count('home: "بفرما حاجی چی تو ذهنته 😁",') == 1
+          assert 'منوی اصلی پایین صفحه‌ست؛ بفرما حاجی 😁' not in text
+          assert 'is_persistent: false' in text
+          print('PASS: exact requested home text; collapsible keyboard retained')
+          PY
+      - name: Run regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/*.test.mjs
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy processor and verify production health
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}" || exit 1
+          supabase functions deploy saeed-ai-v7 --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
+          curl --fail --silent --show-error --retry 3 "https://${PROJECT_REF}.supabase.co/functions/v1/saeed-ai-v7?health=$(date +%s)" | jq -e '.configured == true and .voice == true' >/dev/null
+          echo 'PASS: production processor deployed and healthy'
+      - name: Commit deployed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/saeed-ai-v7/index.ts
+          git commit -m 'copy: replace home message with concise greeting'
+          git push origin HEAD:main
