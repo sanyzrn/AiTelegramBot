@@ -1,4 +1,4 @@
-name: Deploy Saeed AI to Supabase
+name: Deploy Saeed AI v9 to Supabase
 on:
   push:
     branches: [main]
@@ -24,7 +24,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_DEPLOY_TOKEN }}
       PROJECT_REF: zurfsjfulddkjiicegxh
     steps:
-      - name: Check out exact source commit
+      - name: Checkout exact source commit
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -36,7 +36,7 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Verify source and run all regression tests before deployment
+      - name: Require complete v9 release, tested shared modules and webhook auth
         shell: bash
         run: |
           set -euo pipefail
@@ -44,66 +44,53 @@ jobs:
           for fn in saeed-ai-v7 saeed-ai-ui saeed-ai-reminders; do
             test -s "supabase/functions/$fn/index.ts"
             test -s "supabase/functions/$fn/deno.json"
+            grep -Fq 'version: "9.0.0"' "supabase/functions/$fn/index.ts"
           done
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq 'X-Saeed-Cron-Secret' supabase/functions/saeed-ai-reminders/index.ts
           grep -Fq 'saeed_ai_authenticate_reminder_cron' supabase/functions/saeed-ai-reminders/index.ts
-          test -s supabase/migrations/20260920090000_saeed_ai_reminders_tasks.sql
-          test -s supabase/migrations/20260920205000_saeed_ai_v8_preference_states.sql
-          test -s supabase/migrations/20260920205100_saeed_ai_v8_vault_cron_auth.sql
+          for migration in 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql; do
+            test -s "supabase/migrations/$migration"
+          done
           if grep -En '//[[:space:]]*@ts-(nocheck|ignore)|@[[:space:]]*ts-expect-error' supabase/functions/_shared/*.ts; then
-            echo '::error::Shared code must be typechecked, never bypassed'; exit 1
+            echo '::error::Shared modules cannot disable type checking'; exit 1
           fi
+          for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_callback_refresh: true'; do
+            grep -Fq "$capability" supabase/functions/saeed-ai-v7/index.ts
+          done
+          for capability in 'v9_auto_tool_routing: true' 'v9_callback_fast_ack: true'; do
+            grep -Fq "$capability" supabase/functions/saeed-ai-ui/index.ts
+          done
+          for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_market_weather: true'; do
+            grep -Fq "$capability" supabase/functions/saeed-ai-reminders/index.ts
+          done
           deno check supabase/functions/_shared/*.ts
           node --experimental-strip-types --test tests/*.test.mjs
-          node - <<'NODE'
-          const fs=require('node:fs');
-          const files=['saeed-ai-v7','saeed-ai-ui','saeed-ai-reminders'];
-          const versions=files.map(n=>{
-            const s=fs.readFileSync(`supabase/functions/${n}/index.ts`,'utf8');
-            const v=s.match(/version:\s*"(\d+\.\d+\.\d+)"/);
-            if(!v)throw Error('Missing version: '+n);
-            return v[1];
-          });
-          if(new Set(versions).size!==1)throw Error('Production functions have different versions: '+versions);
-          const v=versions[0];
-          if(v==='9.0.0'){
-            const p=fs.readFileSync('supabase/functions/saeed-ai-v7/index.ts','utf8');
-            const g=fs.readFileSync('supabase/functions/saeed-ai-ui/index.ts','utf8');
-            const r=fs.readFileSync('supabase/functions/saeed-ai-reminders/index.ts','utf8');
-            for(const x of ['v9_recurring: true','v9_briefings: true','v9_callback_refresh: true'])if(!p.includes(x))throw Error('Missing processor capability: '+x);
-            for(const x of ['v9_auto_tool_routing: true','v9_callback_fast_ack: true'])if(!g.includes(x))throw Error('Missing gateway capability: '+x);
-            for(const x of ['v9_recurring: true','v9_briefings: true'])if(!r.includes(x))throw Error('Missing dispatcher capability: '+x);
-          }else if(v!=='8.0.1')throw Error('Unsupported version '+v);
-          fs.appendFileSync(process.env.GITHUB_ENV,`EXPECTED_VERSION=${v}\n`);
-          console.log('PASS: consistent source release '+v);
-          NODE
+          echo 'PASS: v9 sources, typechecks, tests and authentication'
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Deploy processor, scheduled dispatcher, then Telegram gateway
+      - name: Deploy processor, dispatcher, then webhook gateway
         shell: bash
         run: |
           set -euo pipefail
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
           done
-      - name: Verify live version and actual v9 capabilities in all three functions
+      - name: Verify live v9.0.0 and actual capability flags on all three
         shell: bash
         run: |
           set -euo pipefail
           base="https://${PROJECT_REF}.supabase.co/functions/v1"
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             payload="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 "$base/$fn?health=$(date +%s)")"
-            printf '%s' "$payload" | jq -e --arg v "$EXPECTED_VERSION" '.configured == true and .version == $v' >/dev/null || { echo "::error::Version/config mismatch: $fn"; exit 1; }
-            if [ "$EXPECTED_VERSION" = '9.0.0' ]; then
-              case "$fn" in
-                saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true' >/dev/null ;;
-                saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true' >/dev/null ;;
-                saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v9_market_weather == true' >/dev/null ;;
-              esac
-            fi
-            echo "PASS: $fn release $EXPECTED_VERSION"
+            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.0.0"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
+            case "$fn" in
+              saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true' >/dev/null ;;
+              saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true' >/dev/null ;;
+              saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v9_market_weather == true' >/dev/null ;;
+            esac
+            echo "PASS: live $fn v9.0.0 and capabilities"
           done
