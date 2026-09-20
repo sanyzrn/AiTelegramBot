@@ -1,0 +1,26 @@
+-- Applied to production as Supabase migration 20260920192758; additive, preserves existing records.
+ALTER TABLE public.saeed_ai_tasks ADD COLUMN IF NOT EXISTS priority SMALLINT NOT NULL DEFAULT 2, ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS source_update_id BIGINT, ADD COLUMN IF NOT EXISTS source_item SMALLINT;
+CREATE UNIQUE INDEX IF NOT EXISTS saeed_ai_task_message_once ON public.saeed_ai_tasks(source_update_id, source_item) WHERE source_update_id IS NOT NULL;
+ALTER TABLE public.saeed_ai_reminders ADD COLUMN IF NOT EXISTS repeat_rule TEXT NOT NULL DEFAULT 'none', ADD COLUMN IF NOT EXISTS repeat_every_hours INTEGER, ADD COLUMN IF NOT EXISTS canceled BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS telegram_update_id BIGINT, ADD COLUMN IF NOT EXISTS snooze_key TEXT UNIQUE;
+CREATE UNIQUE INDEX IF NOT EXISTS saeed_ai_reminder_message_once ON public.saeed_ai_reminders(telegram_update_id) WHERE telegram_update_id IS NOT NULL;
+DO $$ BEGIN ALTER TABLE public.saeed_ai_reminders ADD CONSTRAINT saeed_ai_repeat_rule_check CHECK (repeat_rule IN ('none','daily','weekly','monthly','hours')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.saeed_ai_reminders ADD CONSTRAINT saeed_ai_repeat_hours_check CHECK ((repeat_rule='hours' AND repeat_every_hours BETWEEN 1 AND 168) OR (repeat_rule<>'hours' AND repeat_every_hours IS NULL)); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE TABLE IF NOT EXISTS public.saeed_ai_expenses (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, telegram_user_id BIGINT NOT NULL, telegram_chat_id BIGINT NOT NULL, description TEXT NOT NULL CHECK (char_length(description) BETWEEN 1 AND 200), amount_toman BIGINT NOT NULL CHECK(amount_toman > 0 AND amount_toman < 1000000000000), telegram_update_id BIGINT UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS saeed_ai_expenses_user_date ON public.saeed_ai_expenses(telegram_user_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS public.saeed_ai_shopping (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, telegram_user_id BIGINT NOT NULL, item TEXT NOT NULL CHECK (char_length(item) BETWEEN 1 AND 120), done BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE (telegram_user_id,item));
+CREATE TABLE IF NOT EXISTS public.saeed_ai_briefing_preferences (telegram_user_id BIGINT PRIMARY KEY, telegram_chat_id BIGINT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT false, send_hour SMALLINT NOT NULL DEFAULT 7 CHECK (send_hour BETWEEN 6 AND 10), timezone TEXT NOT NULL DEFAULT 'Asia/Tehran' CHECK (timezone IN ('Asia/Tehran','Europe/Istanbul')), last_sent_day DATE, lease_until TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE public.saeed_ai_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saeed_ai_shopping ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saeed_ai_briefing_preferences ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION public.saeed_ai_claim_due_reminders(p_limit INTEGER DEFAULT 50)
+RETURNS TABLE (id BIGINT, telegram_chat_id BIGINT, note TEXT, attempt_count INTEGER)
+LANGUAGE sql SECURITY DEFINER SET search_path=''
+AS $$ WITH due AS (SELECT r.id FROM public.saeed_ai_reminders r WHERE NOT r.sent AND NOT r.canceled AND r.status IN ('pending','processing') AND r.remind_at<=now() AND (r.lease_until IS NULL OR r.lease_until<now()) AND r.attempt_count<5 ORDER BY r.remind_at,r.id LIMIT LEAST(GREATEST(p_limit,1),100) FOR UPDATE SKIP LOCKED), claimed AS (UPDATE public.saeed_ai_reminders r SET status='processing',lease_until=now()+interval '5 minutes',attempt_count=r.attempt_count+1,last_error=NULL FROM due WHERE r.id=due.id RETURNING r.id,r.telegram_chat_id,r.note,r.attempt_count) SELECT * FROM claimed; $$;
+REVOKE ALL ON FUNCTION public.saeed_ai_claim_due_reminders(INTEGER) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.saeed_ai_claim_due_reminders(INTEGER) TO service_role;
+CREATE OR REPLACE FUNCTION public.saeed_ai_claim_briefings(p_limit INTEGER DEFAULT 30)
+RETURNS TABLE (telegram_user_id BIGINT,telegram_chat_id BIGINT,local_day DATE)
+LANGUAGE sql SECURITY DEFINER SET search_path=''
+AS $$ WITH due AS (SELECT p.telegram_user_id,(now() AT TIME ZONE p.timezone)::date AS day FROM public.saeed_ai_briefing_preferences p JOIN public.telegram_bot_user_access a ON a.telegram_user_id=p.telegram_user_id AND a.enabled WHERE p.enabled AND extract(hour from now() AT TIME ZONE p.timezone)>=p.send_hour AND extract(hour from now() AT TIME ZONE p.timezone)<p.send_hour+1 AND (p.last_sent_day IS NULL OR p.last_sent_day < (now() AT TIME ZONE p.timezone)::date) AND (p.lease_until IS NULL OR p.lease_until < now()) ORDER BY p.telegram_user_id LIMIT LEAST(GREATEST(p_limit,1),50) FOR UPDATE OF p SKIP LOCKED), claimed AS (UPDATE public.saeed_ai_briefing_preferences p SET lease_until=now()+interval '5 minutes' FROM due WHERE p.telegram_user_id=due.telegram_user_id RETURNING p.telegram_user_id,p.telegram_chat_id,due.day) SELECT claimed.telegram_user_id,claimed.telegram_chat_id,claimed.day FROM claimed; $$;
+REVOKE ALL ON FUNCTION public.saeed_ai_claim_briefings(INTEGER) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.saeed_ai_claim_briefings(INTEGER) TO service_role;
