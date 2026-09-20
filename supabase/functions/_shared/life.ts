@@ -1,3 +1,4 @@
+import { briefingExternalSections } from "./briefing-sources.ts";
 /** Saeed AI v9 utilities; call only after authenticated private Telegram gate. */
 export type LifeContext = { db: any; tg: (method: string, payload: Record<string, unknown>) => Promise<any>; send: (chat: number, text: string) => Promise<any> };
 const digits = (value: string) => value.replace(/[۰-۹٠-٩]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d) >= 0 ? "۰۱۲۳۴۵۶۷۸۹".indexOf(d) : "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
@@ -24,6 +25,11 @@ export function parseExpense(message: string): { description: string; amount: bi
 export async function handleLifeMessage(c: LifeContext, id: number, chat: number, text: string, update: number): Promise<boolean> {
   const msg = text.trim();
   if (!msg) return false;
+  if (/^(?:\/briefing_test|صبح[‌\s-]*نامه\s+(?:تست|الان))$/iu.test(msg)) {
+    const sections = await briefingExternalSections();
+    await c.send(chat, "🧪 پیش‌نمایش منابع صبح‌نامه (فقط نمایش، بدون تغییر تنظیمات):\n\n" + sections);
+    return true;
+  }
   const brief = /^(?:\/briefing(?:\s+(on|off))?|صبح[‌\s-]*نامه(?:\s+(روشن|خاموش|فعال|غیرفعال))?)$/iu.exec(msg);
   if (brief) {
     const mode = brief[1] || brief[2] || "";

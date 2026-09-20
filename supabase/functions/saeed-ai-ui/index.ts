@@ -655,6 +655,7 @@ Deno.serve(async (req) => {
         if (c) return forward(update);
         if (!m) return;
         const text = (m.text || "").trim();
+        if (/^صبح[‌\s-]*نامه\s+(?:تست|الان)$/iu.test(text)) return forward(update);
         if (
           MENUS.has(text) ||
           text.startsWith("/") ||

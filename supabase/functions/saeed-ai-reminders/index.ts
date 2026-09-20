@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { nextOccurrence, type RepeatRule } from "../_shared/repeat.ts";
+import { briefingExternalSections } from "../_shared/briefing-sources.ts";
 const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 let KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -76,7 +77,8 @@ async function dispatchBriefings() {
       const todayRems = (rems.data || []).filter((r: any) => { const at = new Date(r.remind_at).getTime(); return at >= start && at < start + 86400000; }).slice(0, 7);
       const total = (expenses.data || []).reduce((sum: bigint, x: any) => sum + BigInt(x.amount_toman), 0n);
       const body = `☀️ صبح‌نامه ${day}\n\n✅ کارهای باز:\n${(tasks.data || []).map((x: any) => "• " + x.task).join("\n") || "موردی نیست."}\n\n⏰ یادآورهای امروز:\n${todayRems.map((x: any) => "• " + x.note + "، " + new Date(x.remind_at).toLocaleTimeString("fa-IR", { timeZone: p.timezone, hour: "2-digit", minute: "2-digit" })).join("\n") || "موردی نیست."}\n\n💰 خرج ثبت‌شده ۲۴ ساعت گذشته${(expenses.data || []).length === 200 ? " (۲۰۰ مورد اخیر)" : ""}: ${total.toLocaleString("fa-IR")} تومان\n\nبرای توقف: «صبح‌نامه خاموش».`;
-      await send(chat, body);
+      const external = await briefingExternalSections();
+      await send(chat, body + "\n\n" + external);
       const { error: saveError } = await db!.from("saeed_ai_briefing_preferences")
         .update({ last_sent_day: day, lease_until: null }).eq("telegram_user_id", uid).eq("enabled", true);
       if (saveError) throw Error("BRIEF_ACK");
@@ -92,7 +94,7 @@ async function dispatchBriefings() {
 Deno.serve(async (request) => {
   const url = new URL(request.url);
   if (request.method === "GET" && url.searchParams.has("health"))
-    return Response.json({ version: "8.0.1", configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ version: "8.0.1", configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true, v9_market_weather: true }, { headers: { "Cache-Control": "no-store" } });
   if (request.method !== "POST") return new Response("Not found", { status: 404 });
   if (!configured()) return new Response("Unavailable", { status: 503 });
   const candidate = request.headers.get("X-Saeed-Cron-Secret") || "";
