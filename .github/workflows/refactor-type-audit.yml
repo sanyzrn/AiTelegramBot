@@ -12,21 +12,12 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - name: Measure errors without hiding failures
+      - name: Inventory top-level declarations and existing dependencies
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           for f in saeed-ai-v7 saeed-ai-ui; do
             p="supabase/functions/$f/index.ts"
-            sed -i '1{/^\/\/ @ts-nocheck$/d;}' "$p"
-            echo "::group::Types for $f"
-            deno check --config "supabase/functions/$f/deno.json" "$p" > "/tmp/$f-types.log" 2>&1 || true
-            echo 'Error codes and frequencies:'
-            grep -oE 'TS[0-9]{4,5}' "/tmp/$f-types.log" | sort | uniq -c | sort -nr | head -30 || true
-            echo 'First 120 relevant lines:'
-            grep -v '^Download ' "/tmp/$f-types.log" | tail -120
-            echo '::endgroup::'
+            echo "### $f: $(wc -l < "$p") lines, $(wc -c < "$p") bytes"
+            grep -nE '^(async )?function [A-Za-z_]+|^(const|let|declare const) [A-Za-z_]+|^Deno\.serve' "$p" || true
           done
