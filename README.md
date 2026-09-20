@@ -1,72 +1,36 @@
 # Saeed AI · Telegram bot
 
-**Source of truth:** This private GitHub repository. Production is Supabase project `zurfsjfulddkjiicegxh`. GitHub Actions deploys both bot functions and the scheduled-reminder dispatcher and verifies their health.
+**Current application release: 9.0.0.** The GitHub `main` branch is the source of truth. Production uses Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers; they are not the application version.
 
-## Production deployment
+## Release and deployment contract
 
-Edit the source in `supabase/functions/saeed-ai-v7/` (processing) or `supabase/functions/saeed-ai-ui/` (Telegram webhook gateway), review it, then push to `main`. `.github/workflows/deploy-supabase.yml` automatically deploys the processor, the reminder dispatcher, and finally the Telegram gateway; it checks all three production health endpoints. A change to `supabase/config.toml` also triggers deployment. You can run the workflow manually from GitHub Actions. Production's `verify_jwt = false` settings match the existing Telegram webhook integration; **both functions must retain their own `X-Telegram-Bot-Api-Secret-Token` authentication check**.
+**Edit TypeScript source directly, review it and push to `main`.** Do not create new features through Python scripts that string-replace the large legacy entrypoints. The historical `scripts/*` integrations were one-off migrations, not the normal development process. Continue extracting typed modules from the legacy files in small, tested changes; `@ts-nocheck` remains on two entrypoints and is not yet safe to remove without a full typecheck/refactor.
 
-Deployment requires `SUPABASE_DEPLOY_TOKEN`, a project-scoped GitHub Actions secret with Edge Functions write access. Rotate it before expiry. `SUPABASE_ACCESS_TOKEN` is used only for the separate source import. Never commit tokens, bot secrets or API keys.
+`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It runs on changes to **any** `supabase/functions/_shared/**` module, all three function directories, the Supabase configuration and the deployment workflow itself. It checks webhook and cron authentication, runs the full Node regression suite and Deno type-checks every shared TypeScript module. It rejects inconsistent release versions, deploys the processor and reminder dispatcher before the Telegram gateway, then fetches the **live** health response from each function and requires the expected version and capabilities. A green unit test alone is **not** a deployment confirmation. Separate historical workflows should not be used for new production feature releases.
 
-## ⚠️ v8.0 upgrade — apply the migration FIRST
+The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Do not commit API credentials, webhook secrets or user data. Both Telegram Edge Functions authenticate `X-Telegram-Bot-Api-Secret-Token`; the cron dispatcher separately authenticates `X-Saeed-Cron-Secret` through its service-role-only verification RPC.
 
-Version `8.0.1` adds two new tables and an atomic reminder-claim function. **Before** pushing the functions (or running the deploy workflow), apply the migration:
+**Database migrations are not applied by the Edge Function deploy job.** Before introducing schema-dependent features, review and apply the needed migrations. The existing v8 setup includes `20260920090000_saeed_ai_reminders_tasks.sql`, `20260920205000_saeed_ai_v8_preference_states.sql` and `20260920205100_saeed_ai_v8_vault_cron_auth.sql`. The cron migration stores a random secret in Supabase Vault and configures the `saeed-ai-reminders-every-minute` job; do not paste it into the repository. Verify delivery with an actual reminder due in a few minutes. Health checks and `claimed: 0` alone cannot prove Telegram delivery.
 
-```bash
-supabase db push   # or run supabase/migrations/20260920090000_saeed_ai_reminders_tasks.sql in the SQL editor
-```
+## v9 functionality currently implemented
 
-The deploy workflow checks the required migration files, but it does not apply migrations itself. Apply all v8 migrations before deploying.
+- **Natural-language tool routing:** common requests for timers, reminders, tasks, expenses, shopping and calculations work without first opening a menu. Other tools are also available in the tools menu; this is not a promise that arbitrary future tools will execute automatically.
+- **Voice:** speech is executed automatically when it contains an identifiable request. Users may reply to the original voice with «تایپش کن»، «خلاصه‌ش کن» or «ترجمه‌ش کن» during the 15-minute retention window. No identifiable request results in a choice menu. Audio processing currently relies on Gemini even when OpenRouter is selected for text chat.
+- **Tasks:** new items append rather than replacing existing tasks; the task list supports ownership-scoped completion and deletion using inline buttons.
+- **Reminders:** explicit daily, weekly, monthly and every-N-hours recurrence, independent minute-based delivery, plus complete, snooze-ten-minutes and cancel buttons. Timers use the same notification infrastructure and may be delayed by up to roughly a minute, rather than being precise phone alarms.
+- **Shopping:** additions are deduplicated; tapping an item's inline button edits the original shopping-list message with the new completion state and updated buttons. If Telegram rejects editing, a fresh list is sent instead. Callbacks are acknowledged promptly at the webhook gateway.
+- **Expenses:** one-line registration and seven-day report. Amounts require an explicit currency; e.g. «ناهار ۴۸۰ هزار تومان». An ambiguous number is **not** silently stored.
+- **Morning briefing:** opt-in, off by default, with tasks, upcoming reminders, recent expenses and independent weather/market source sections. Weather is currently configured for Tehran. External rates without valid source timestamps or stale rates are withheld rather than invented.
+- **UI:** a native collapsible Telegram reply keyboard, concise home greeting «بفرما حاجی چی تو ذهنته 😁», and separately configurable tone and length.
 
-### One-time setup for real scheduled reminders (Vault-secured)
+Health release version is `9.0.0` on **all three deployed functions**. Processor flags include `v9_recurring`, `v9_briefings` and `v9_callback_refresh`; gateway flags include `v9_auto_tool_routing` and `v9_callback_fast_ack`; the dispatcher exposes `v9_recurring`, `v9_briefings` and `v9_market_weather`. These flags mean the named code path is present, not that a real Telegram end-to-end test was performed.
 
-Apply the following SQL migrations **before deploying**:
+## Verification and known limits
 
-- `20260920090000_saeed_ai_reminders_tasks.sql`: reminder/task tables and atomic claim function.
-- `20260920205000_saeed_ai_v8_preference_states.sql`: fixes missing database CHECK values for all new v8 tools and menu pages.
-- `20260920205100_saeed_ai_v8_vault_cron_auth.sql`: generates a random 256-bit token inside **Supabase Vault**, grants its verification RPC exclusively to `service_role`, and creates/updates the one-minute pg_cron job with its authenticated request header. No secret value is checked into Git, pasted into SQL, or exposed in logs.
+Run `node --experimental-strip-types --test tests/*.test.mjs`; Deno-check `supabase/functions/_shared/*.ts`; then confirm the canonical deployment workflow is green and inspect all three live health endpoints. Test one real voice, one timed reminder delivery, a shopping-list tick/undo and an opt-in briefing in Telegram before treating those end-to-end scenarios as verified.
 
-The third migration uses the existing Vault entries `saeed_ai_project_url` and `saeed_ai_publishable_key`. The dispatcher validates the dedicated `X-Saeed-Cron-Secret` header by calling the service-role-only database function. It intentionally does **not** require a duplicate `SAEED_AI_CRON_SECRET` Edge Function environment variable. No additional manual secret setup is needed after the Vault migration.
+Remaining technical work: refactor and type-check the two oversized `@ts-nocheck` entrypoints without changing behavior. Richer all-in-one sentence parsing, selectable briefing cities, shared shopping lists, calendar/receipt integrations and a full daily dashboard are **not yet implemented**. Keep this README in sync with actual source and deployed behavior.
 
-The pg_cron job name is `saeed-ai-reminders-every-minute`, schedule `* * * * *`. Verify its HTTP response JSON contains `"ok": true`, then test actual delivery with a reminder due in a few minutes. A successful response with `claimed: 0` proves polling but not message delivery. Without this job, reminders will not be delivered.
+## Recovery
 
-## Conversation tone modes
-
-In Telegram, choose **⚙️ تنظیمات → 🎭 لحن**. **😄 شوخ‌طبع** has an explicit warm, lively, informal Iranian-Persian personality with jokes and emojis, while staying respectful in sensitive situations and answering requests directly. **🪷 عارفانه** is original Persian prose inspired by seventh-century Hijri mystical literature, without fabricated poetry attributions. The choice is saved per user and applies to both the Telegram gateway chat/search and the processing function's text, media and voice replies.
-
-Production's `telegram_bot_preferences_tone_check` was updated in Supabase migration `20260919154210_saeed_ai_add_mystic_tone` and its exact SQL is tracked in `supabase/migrations/`. Existing tone choices are preserved. Database migrations are **not** automatically run by the Edge Functions-only deployment workflow; review and apply any new migrations before deploying features that depend on them.
-
-## v8.0 feature pack
-
-### 🛠 Practical tools (🧰 ابزارها)
-- **⏰ یادآور** — smart reminder: write e.g. «۲۰ دقیقه دیگه قابلمه رو خاموش کن» and Gemini parses the time (Tehran timezone). The scheduled dispatcher delivers it independently of later user interaction. Active reminders are listed when opening the tool.
-- **🧮 ماشین‌حساب** — step-by-step math solver; the solution is sent in a copyable block.
-- **📧 ایمیل نگارش** — paste your key points, get a complete, polite Persian email (subject + body) in a copyable block.
-- **✅ تسک‌ها** — say your tasks in free text, Gemini extracts a clean list. Tick items off with `انجام شد ۱`. Opening the tool shows your open tasks; 🗑 clears the list.
-- **📋 پروفایل من** — your tone/length/language settings, today's quota usage, and live counts of reminders/tasks. Also available via `/profile`.
-
-### 🎉 Fun corner (🎉 سرگرمی)
-- **🔮 طالع** — a playful, clearly-for-fun daily horoscope (positive vibes only).
-- **🧠 تست هوش** — an original riddle; the answer arrives as a hidden Telegram spoiler you tap to reveal.
-- **📖 داستان** — an original Persian micro-story with a twist ending; send a theme for a custom one.
-- **😂 جوک** — fresh, clean, smart Persian jokes.
-- **🔥 روست** — a warm-hearted, obviously-joking roast that always ends with a compliment.
-
-### Fixes & improvements in v8.0
-- Retry flow no longer offers a stale "تلاش مجدد" for an older request (stale rows are cleared per new request).
-- Webhook secret hash is computed once per isolate instead of on every request.
-- Clearer, provider-specific AI failure messages (401/403 key issues, 404 model removed, 429 busy).
-- Privacy text now honestly states that messages are auto-purged periodically by the new sweeper.
-- An hourly in-request sweeper deletes old chat history, expired voice/retry rows, and old sent reminders/done tasks.
-- The task button now opens the existing task list and clear-list controls instead of only switching input mode.
-- Scheduled reminders use a separately authenticated dispatcher with atomic leases and retry state.
-- The gateway now routes all new menu buttons and reminder/task free-text input to the processing function.
-- `[media]`/`[tool]` history labels reflect the tool used, keeping chat context accurate.
-
-## Source import / recovery (normally leave alone)
-
-The manually triggered `.github/workflows/import-supabase.yml` downloads and commits currently deployed `saeed-ai-ui` and `saeed-ai-v7` sources. **Do not run it after editing GitHub source unless you deliberately intend to replace repository copies with the deployed versions.** Normal development flows from GitHub to Supabase, not vice versa.
-
-The other historical Edge Functions remain untouched. User data, secrets, webhook configuration, and `.env` files are **not backed up** by source import. This repository is not a complete database backup. To reproduce the bot elsewhere, database schema, configuration, and privacy-safe data backup need separate review.
-
-The unrelated old repository content is preserved on branch [`archive/pre-saeed-ai-import-20260919`](../../tree/archive/pre-saeed-ai-import-20260919).
+The manually triggered `.github/workflows/import-supabase.yml` imports deployed function source back into GitHub. **Do not run it after editing GitHub unless you deliberately intend to overwrite repository source with deployed code.** This repo is not a backup of Supabase data, secrets, webhook setup or the database. Historical unrelated project content remains on `archive/pre-saeed-ai-import-20260919`.
