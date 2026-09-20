@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { selectToolIntent } from "../_shared/intent-model.ts";
+import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
+import { calculateExact } from "../_shared/calculator.ts";
 import { unzipSync } from "npm:fflate@0.8.2";
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
@@ -1496,7 +1498,7 @@ async function sweep() {
     console.error("SWEEP", String(e).slice(0, 60));
   }
 }
-async function setReminder(id, chat, input) {
+async function setReminder(id, chat, input, update = null) {
   // The parser always uses Gemini, regardless of the conversational provider.
   const s = { ...(await cfg()), provider: "gemini" };
   const tehran = new Date().toLocaleString("en-US", {
@@ -1512,7 +1514,7 @@ async function setReminder(id, chat, input) {
             text:
               "Current Tehran time: " +
               tehran +
-              '. Parse this Persian reminder request into strict minified JSON {"note":string,"remind_at":string}. Convert relative times (e.g. "20 minutes later", "tomorrow 8am") into ISO8601 with +03:30 offset. If no usable time, use null. Request: ' +
+              '. Parse this Persian reminder request into minified JSON {"note":string,"remind_at":string|null,"repeat_rule":"none|daily|weekly|monthly|hours","repeat_every_hours":number|null}. Return repeat_rule none unless the user explicitly asks to repeat. If repeating every N hours use rule hours and N=1..168; for every day, week or month use daily, weekly or monthly. Convert relative times to ISO8601 with +03:30 Tehran offset. A recurring reminder still needs an unambiguous FIRST occurrence; if unknown use null. Request: ' +
               input,
           },
         ],
@@ -1540,13 +1542,32 @@ async function setReminder(id, chat, input) {
     );
     return;
   }
-  const { error } = await db.from("saeed_ai_reminders").insert({
-    telegram_user_id: id,
-    telegram_chat_id: chat,
-    note: String(j.note).slice(0, 300),
-    remind_at: when.toISOString(),
-  });
+  const rules = ["none", "daily", "weekly", "monthly", "hours"];
+  const rule = rules.includes(j?.repeat_rule) ? j.repeat_rule : "none";
+  const hours = rule === "hours" ? Number(j?.repeat_every_hours) : null;
+  if (rule === "hours" && (!Number.isInteger(hours) || hours < 1 || hours > 168)) {
+    await send(chat, "⏰ فاصله تکرار باید بین ۱ تا ۱۶۸ ساعت باشه؛ زمان دقیق‌تر بگو.");
+    return;
+  }
+  if (rule === "none" && /(?:هر\s*\d+\s*ساعت|هر\s*روز|روزانه|هفتگی|ماهانه|هر\s*هفته|هر\s*ماه)/iu.test(input)) {
+    await send(chat, "⏰ تکرار رو دقیق متوجه نشدم؛ مثلاً «هر روز ساعت ۸ صبح یادم بنداز».");
+    return;
+  }
+  const anchor = rule === "monthly" ? new Date(when.getTime() + 210 * 60000).getUTCDate() : null;
+  const { data: created, error } = await db.from("saeed_ai_reminders")
+    .upsert({
+      telegram_user_id: id,
+      telegram_chat_id: chat,
+      note: String(j.note).slice(0, 300),
+      remind_at: when.toISOString(),
+      repeat_rule: rule,
+      repeat_every_hours: hours,
+      repeat_anchor_day: anchor,
+      telegram_update_id: update,
+    }, { onConflict: "telegram_update_id", ignoreDuplicates: true })
+    .select("id").maybeSingle();
   if (error) throw Error("REMIND_SAVE");
+  if (!created) return send(chat, "ℹ️ این یادآور قبلاً ثبت شده بود؛ دوباره اضافه نکردم.");
   await save(id, { pending_tool: "chat" });
   await send(
     chat,
@@ -1559,7 +1580,7 @@ async function setReminder(id, chat, input) {
     id,
   );
 }
-async function saveTasks(id, chat, input) {
+async function saveTasks(id, chat, input, update = null) {
   const s = { ...(await cfg()), provider: "gemini" };
   const r = await ai(
     s,
@@ -1569,7 +1590,7 @@ async function saveTasks(id, chat, input) {
         parts: [
           {
             text:
-              'Extract a concise task list from this Persian text into strict minified JSON {"tasks":[string]}. Max 10 short imperative Persian items, no invented deadlines. Text: ' +
+              'Extract concise NEW tasks to APPEND (never replace existing tasks) from this Persian text into strict minified JSON {"tasks":[string]}. Max 10 short imperative Persian items, no invented deadlines. Text: ' +
               input,
           },
         ],
@@ -1593,19 +1614,18 @@ async function saveTasks(id, chat, input) {
     );
     return;
   }
-  await db
-    .from("saeed_ai_tasks")
-    .delete()
-    .eq("telegram_user_id", id)
-    .eq("done", false);
-  const { error } = await db
-    .from("saeed_ai_tasks")
-    .insert(tasks.map((t) => ({ telegram_user_id: id, task: t })));
+  const { data: created, error } = await db.from("saeed_ai_tasks")
+    .upsert(tasks.map((t, i) => ({
+      telegram_user_id: id, task: t, source_update_id: update, source_item: i,
+      priority: /(?:فوری|اولویت\s*بالا)/u.test(input) ? 1 : 2,
+    })), { onConflict: "source_update_id,source_item", ignoreDuplicates: true })
+    .select("id");
   if (error) throw Error("TASK_SAVE");
+  if (!created?.length) return send(chat, "ℹ️ این تسک‌ها قبلاً ثبت شده بودن؛ دوباره اضافه نکردم.");
   await save(id, { pending_tool: "chat" });
   await send(
     chat,
-    "✅ لیست کارهات آماده‌ست:\n" +
+    "✅ تسک‌ها به لیست قبلی اضافه شدن:\n" +
       tasks.map((t, i) => "▫️ " + (i + 1) + ". " + t).join("\n") +
       "\n\nبرای تیک زدن بنویس: انجام شد ۱ ✅",
     "tasks",
@@ -1613,6 +1633,7 @@ async function saveTasks(id, chat, input) {
   );
 }
 async function listTasks(id, chat) {
+  return handleLifeMessage({ db, tg, send }, id, chat, "/tasks", 0);
   const { data } = await db
     .from("saeed_ai_tasks")
     .select("task,done")
@@ -1633,7 +1654,7 @@ async function listTasks(id, chat) {
     chat,
     "✅ تسک‌های بازت:\n" +
       open.map((t, i) => "▫️ " + (i + 1) + ". " + t.task).join("\n") +
-      "\n\nبرای تیک زدن بنویس: انجام شد ۱ ✅ یا کار جدیدت رو بگو تا لیست تازه بشه.",
+      "\n\nتسک جدید به این لیست اضافه می‌شه؛ قبلی‌ها حذف نمی‌شن.",
     "tasks",
     id,
   );
@@ -1654,7 +1675,7 @@ async function doneTask(id, chat, n) {
     );
     return;
   }
-  await db.from("saeed_ai_tasks").update({ done: true }).eq("id", t.id);
+  await db.from("saeed_ai_tasks").update({ done: true }).eq("id", t.id).eq("telegram_user_id", id);
   const cheers = ["🎉 آفرین!", "💪 ایول!", "🔥 داری می‌ترکونی!", "👏 عالیه!"];
   await send(
     chat,
@@ -1765,6 +1786,7 @@ async function callbacks(c, update) {
       message_id: c.message.message_id,
     });
   } catch {}
+  if (await handleLifeCallback({ db, tg, send }, id, chat, a)) return;
   if (a === "act:md") return exportMd(id, chat);
   if (a.startsWith("retry:")) return retry(id, chat, update);
   if (a.startsWith("voice:")) {
@@ -1867,19 +1889,27 @@ async function message(m, update) {
   if (await navigate(id, chat, text, p)) return;
   const doneM = /^انجام\s*شد\s*(\d{1,2})$/.exec(text);
   if (doneM) return doneTask(id, chat, Number(doneM[1]));
-  if (p.pending_tool === "remind" && text) return setReminder(id, chat, text);
-  if (p.pending_tool === "tasks" && text) return saveTasks(id, chat, text);
+  if (p.pending_tool === "remind" && text) return setReminder(id, chat, text, update);
+  if (p.pending_tool === "tasks" && text) return saveTasks(id, chat, text, update);
   if (await adminInput(id, chat, text)) return;
+  if (await handleLifeMessage({ db, tg, send }, id, chat, (m.caption || text).trim(), update)) return;
+  const exact = calculateExact(text);
+  if (exact) return send(chat, exact);
   // A gateway-selected intent is validated against this local allowlist.
-  const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas"]);
+  const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing"]);
   const requestText = (m.caption || text).trim();
   const inferred = p.pending_tool === "chat" && requestText
     ? safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
       : await selectToolIntent(requestText, GK, (await cfg()).gemini)
     : "chat";
-  if (inferred === "remind") return setReminder(id, chat, requestText);
-  if (inferred === "tasks") return saveTasks(id, chat, requestText);
+  if (inferred === "remind") return setReminder(id, chat, requestText, update);
+  if (inferred === "tasks") return saveTasks(id, chat, requestText, update);
+  if (["expenses", "shopping", "briefing"].includes(inferred)) {
+    if (await handleLifeMessage({ db, tg, send }, id, chat, requestText, update)) return;
+    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ برای گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش.");
+  }
+  if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
   if (inferred === "repo") {
     const link = requestText.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?/i);
     if (link) return startWork(m, update, "repo", link[0], null);
