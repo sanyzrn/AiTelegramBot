@@ -79,6 +79,20 @@ jobs:
           grep -Fq '"9.3.0"' supabase/functions/_shared/version.ts
           grep -Fq '20260921071728_saeed_ai_v93_briefing_city.sql' .github/workflows/deploy-supabase.yml
           grep -Fq 'v93_city_voice: true' supabase/functions/saeed-ai-reminders/index.ts
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          p=Path('supabase/functions/_shared/morning-voice.ts')
+          text=p.read_text()
+          old='  `تعداد یادآورهای امروز: ${f.reminders.length}`, \n'
+          assert text.count(old)==1, 'Unexpected source; refuse to normalize'
+          cleaned=text.replace(old,old[:-2]+'\n')
+          blob=cleaned.encode('utf-8')
+          sha=hashlib.sha1(b'blob '+str(len(blob)).encode()+b'\0'+blob).hexdigest()
+          assert sha=='49beb91fb71e6e351b6d0f2d07c8a261b396b659', 'Unexpected normalized source'
+          p.write_text(cleaned)
+          PY
+          git add -- supabase/functions/_shared/morning-voice.ts
           git diff --cached --check
       - name: Commit only validated source files on release branch
         shell: bash
