@@ -53,6 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import re
           from pathlib import Path
           workflows=Path('.github/workflows')
           expected={'deploy-supabase.yml','import-supabase.yml','shared-typecheck.yml','v9-regression.yml'}
@@ -62,8 +63,8 @@ jobs:
           for path in workflows.glob('*.yml'):
             source=path.read_text()
             if path.name == 'import-supabase.yml':
-              assert 'workflow_dispatch:' in source and '  push:' not in source, 'Recovery import must be manual-only'
+              assert 'workflow_dispatch:' in source and not re.search(r'(?m)^\s*push:\s*$', source), 'Recovery import must be manual-only'
               continue
-            assert 'contents: write' not in source, f'Unexpected source write access: {path}'
+            assert not re.search(r'(?m)^\s*contents:\s*write\s*$', source), f'Unexpected source write access: {path}'
           print('PASS: automatic workflows cannot patch or write to main')
           PY
