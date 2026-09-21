@@ -79,7 +79,7 @@ jobs:
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.45.5
       - name: Deploy processor, dispatcher, then webhook gateway
         shell: bash
         run: |
