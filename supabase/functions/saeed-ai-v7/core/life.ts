@@ -1,17 +1,11 @@
-/** Saeed AI saeed-ai-v7 life module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
-import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
-import { calculateExact } from "../../_shared/calculator.ts";
-import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
-import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
-import { unzipSync } from "npm:fflate@0.8.2";
+/** Reminders, timers, task persistence and profile for Saeed AI. */
+import { handleLifeMessage, renderTasks } from "../../_shared/life.ts";
+import type { TimerRequest } from "../../_shared/timer.ts";
 import { admin, db } from "./state.ts";
 import { send, tg } from "./transport.ts";
 import { cfg, pref, save } from "./admin.ts";
 import { ai } from "./model.ts";
 import { LANG, SIZES, TONES } from "./ui.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 let lastSweep = 0;
 
@@ -65,9 +59,8 @@ export async function scheduleRealTimer(id, chat, timer: TimerRequest, update) {
     "tools", id);
 }
 
-
 export async function setReminder(id, chat, input, update = null) {
-  // The parser always uses Gemini, regardless of the conversational provider.
+  // Reminder parsing uses Gemini regardless of the conversational provider.
   const s = { ...(await cfg()), provider: "gemini" };
   const tehran = new Date().toLocaleString("en-US", {
     timeZone: "Asia/Tehran",
@@ -104,10 +97,7 @@ export async function setReminder(id, chat, input, update = null) {
     return;
   }
   if (+when > Date.now() + 30 * 86400000) {
-    await send(
-      chat,
-      "⏰ فعلاً تا ۳۰ روز آینده رو پوشش می‌دم؛ نزدیک‌تر بگو. 😉",
-    );
+    await send(chat, "⏰ فعلاً تا ۳۰ روز آینده رو پوشش می‌دم؛ نزدیک‌تر بگو. 😉");
     return;
   }
   const rules = ["none", "daily", "weekly", "monthly", "hours"];
@@ -177,10 +167,7 @@ export async function saveTasks(id, chat, input, update = null) {
     .filter(Boolean)
     .slice(0, 10);
   if (!tasks.length) {
-    await send(
-      chat,
-      "🙈 تسکی پیدا نکردم؛ واضح‌تر بنویس، مثلاً «باید نون بخرم و به مامان زنگ بزنم».",
-    );
+    await send(chat, "🙈 تسکی پیدا نکردم؛ واضح‌تر بنویس، مثلاً «باید نون بخرم و به مامان زنگ بزنم».");
     return;
   }
   const { data: created, error } = await db.from("saeed_ai_tasks")
@@ -192,14 +179,8 @@ export async function saveTasks(id, chat, input, update = null) {
   if (error) throw Error("TASK_SAVE");
   if (!created?.length) return send(chat, "ℹ️ این تسک‌ها قبلاً ثبت شده بودن؛ دوباره اضافه نکردم.");
   await save(id, { pending_tool: "chat" });
-  await send(
-    chat,
-    "✅ تسک‌ها به لیست قبلی اضافه شدن:\n" +
-      tasks.map((t, i) => "▫️ " + (i + 1) + ". " + t).join("\n") +
-      "\n\nبرای تیک زدن بنویس: انجام شد ۱ ✅",
-    "tasks",
-    id,
-  );
+  // The actual task list is the confirmation: users can tick, undo or delete immediately.
+  await renderTasks({ db, tg, send }, id, chat);
 }
 
 export async function listTasks(id, chat) {
@@ -207,30 +188,22 @@ export async function listTasks(id, chat) {
 }
 
 export async function doneTask(id, chat, n) {
-  const { data } = await db
+  const { data, error: readError } = await db
     .from("saeed_ai_tasks")
     .select("id,task")
     .eq("telegram_user_id", id)
     .eq("done", false)
     .order("id")
     .limit(20);
+  if (readError) throw Error("TASK_READ");
   const t = (data || [])[n - 1];
   if (!t) {
-    await send(
-      chat,
-      "🙈 تسکی با این شماره پیدا نشد؛ «✅ تسک‌ها» رو بزن تا لیست رو ببینی.",
-    );
+    await send(chat, "🙈 تسکی با این شماره پیدا نشد؛ «✅ تسک‌ها» رو بزن تا لیست رو ببینی.");
     return;
   }
-  await db.from("saeed_ai_tasks").update({ done: true }).eq("id", t.id).eq("telegram_user_id", id);
-  const cheers = ["🎉 آفرین!", "💪 ایول!", "🔥 داری می‌ترکونی!", "👏 عالیه!"];
-  await send(
-    chat,
-    cheers[Math.floor(Math.random() * cheers.length)] +
-      " «" +
-      t.task +
-      "» انجام شد.",
-  );
+  const { error } = await db.from("saeed_ai_tasks").update({ done: true }).eq("id", t.id).eq("telegram_user_id", id).eq("done", false);
+  if (error) throw Error("TASK_DONE");
+  await renderTasks({ db, tg, send }, id, chat);
 }
 
 export async function profile(id, chat) {
