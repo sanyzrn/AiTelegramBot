@@ -2,7 +2,7 @@ name: One-time verified import of user-provided v9.1.0 ZIP
 on:
   push:
     branches: ['release/v9.1.0-reviewed-20260921']
-    paths: ['scripts/v91_payload.b64']
+    paths: ['scripts/v91_payload.part3']
 permissions:
   contents: write
 jobs:
@@ -31,7 +31,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import base64, hashlib, io, lzma, tarfile
-          payload=Path('scripts/v91_payload.b64').read_text(encoding='ascii').strip()
+          payload=''.join(Path(path).read_text(encoding='ascii').strip() for path in ['scripts/v91_payload.b64','scripts/v91_payload.part1','scripts/v91_payload.part2','scripts/v91_payload.part3'])
           raw=base64.b64decode(payload,validate=True)
           assert hashlib.sha256(raw).hexdigest()=='f6eb5e7b9584d05eda1c562361db7fa89cbcf942f20915632ccb5386e5dbc418','Archive checksum mismatch'
           expected_text='''ee28fb866010c9fd72df5b3b4974501405bb1ddc .env.example
@@ -83,11 +83,11 @@ jobs:
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = 'refs/heads/release/v9.1.0-reviewed-20260921'
-          git rm -- .github/workflows/verified-v91-import-once.yml scripts/v91_payload.b64
+          git rm -- .github/workflows/verified-v91-import-once.yml scripts/v91_payload.b64 scripts/v91_payload.part1 scripts/v91_payload.part2 scripts/v91_payload.part3
           git add -- .env.example .github/workflows/deploy-supabase.yml .github/workflows/import-supabase.yml .github/workflows/shared-typecheck.yml README.md supabase/config.toml supabase/functions/_shared/version.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-ui/core/config.ts supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/core/admin.ts supabase/functions/saeed-ai-v7/core/life.ts supabase/functions/saeed-ai-v7/core/work.ts supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql tests/gateway-routing.test.mjs
           git diff --cached --check
           git status --short
-          test "$(git diff --cached --name-only | wc -l)" -eq 19
+          test "$(git diff --cached --name-only | wc -l)" -eq 22
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat: ship reviewed Saeed AI v9.1.0 fixes from supplied ZIP'
