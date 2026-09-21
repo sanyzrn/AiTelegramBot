@@ -1,1 +1,1 @@
-Run only the isolated, checksum-pinned v9.2 import. No workflow changes may be pushed by the Actions token.
+Retry isolated hash-verified v9.2 import after updating deployment and shared-typecheck workflows; test all 35 regressions.
