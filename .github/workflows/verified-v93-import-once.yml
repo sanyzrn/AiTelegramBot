@@ -1,0 +1,80 @@
+name: One-time guarded v9.3 import
+on:
+  push:
+    branches: ['release/v9.3.0-city-briefing-20260921']
+    paths: ['.github/workflows/verified-v93-import-once.yml']
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify main baseline, patch allowlist and README merge
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.3.0-city-briefing-20260921'
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = 412493b614185ea348a34f34030b13ccf7352e9b
+          python3 - <<'PY'
+          import base64,hashlib,lzma,re,struct,subprocess
+          from pathlib import Path
+          chunks=[Path(f'scripts/v93_release.part{i}').read_bytes() for i in range(7)]
+          assert [len(b) for b in chunks]==[3600]*6+[2940]
+          z=base64.b64decode(b''.join(chunks),validate=True)
+          assert hashlib.sha256(z).hexdigest()=='987cec48168ac2d8ee226380fe33798c6637f6f24a678f2ebe48f1c69174b476'
+          raw=lzma.decompress(z)
+          assert hashlib.sha256(raw).hexdigest()=='a41c2f465b415d76ecc4c9ce77ebfedf3a13d6e81822f9ff25e0704d90123066'
+          assert raw[:4]==b'V93B' and struct.unpack_from('>I',raw,4)[0]==len(raw)-8
+          p=raw[8:].decode()
+          paths='.github/workflows/deploy-supabase.yml .github/workflows/shared-typecheck.yml supabase/config.toml supabase/functions/_shared/briefing-sources.ts supabase/functions/_shared/intent-model.ts supabase/functions/_shared/life.ts supabase/functions/_shared/morning-voice.ts supabase/functions/_shared/tool-intent.ts supabase/functions/_shared/version.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql tests/v93.test.mjs'.split()
+          assert re.findall(r'(?m)^--- a/(.+)$',p)==paths
+          assert re.findall(r'(?m)^\+\+\+ b/(.+)$',p)==paths
+          assert not re.search(r'(?m)^(diff --git|rename |Binary files)',p)
+          Path('/tmp/v93.patch').write_text(p)
+          subprocess.run(['git','apply','--check','/tmp/v93.patch'],check=True)
+          subprocess.run(['git','apply','/tmp/v93.patch'],check=True)
+          r=Path('README.md')
+          assert subprocess.check_output(['git','hash-object',str(r)],text=True).strip()=='dfa4ea64f452502c8d4d512f8d2ec3ae869a31ca'
+          s=r.read_text()
+          def change(a,b):
+            global s
+            assert s.count(a)==1,a
+            s=s.replace(a,b,1)
+          change('**Current application release: 9.2.0.**','**Current application release: 9.3.0.**')
+          change('## v9.2.0 fixes and hardening','## v9.3.0 city-aware morning briefing\n\n- Select city with «شهر من اصفهان»، «شهرم رشت» or `/city Isfahan`. Open-Meteo geocodes and saves coordinates; the default remains Tehran. Briefing stays opt-in.\n- Weather-verified clothing tips, daily motivational notes, and a warm AI introduction with deterministic fallback if providers fail. No fabricated weather or market figures.\n- Cron claims at most six recipients per tick and shares a seven-second total AI deadline. Apply the new city migration before deploying.\n\n## v9.2.0 fixes and hardening')
+          for a,b in [('checks **live** v9.2.0','checks **live** v9.3.0'),('Health version `9.2.0`','Health version `9.3.0`'),('Weather currently uses Tehran.','Weather defaults to Tehran until the user selects a city.'),('user-selected briefing cities, ',''),('(latest: `20260921040749_saeed_ai_v91_keyboard_page_states.sql`, which extends the `keyboard_page` CHECK constraint)','(latest: `20260921120000_saeed_ai_v93_briefing_city.sql`; the previous v9.1 keyboard-page migration remains required)')]:change(a,b)
+          assert '## v9.2.0 fixes and hardening' in s and '## v9.1.0 fixes and hardening' in s
+          r.write_text(s)
+          changed=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()+subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+          assert set(changed)==set(paths+['README.md']),changed
+          print('Verified exactly fifteen reviewed sources, previous fixes preserved')
+          PY
+      - name: Typecheck all modules and run all regressions
+        run: |
+          set -euo pipefail
+          deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts
+          deno check --config supabase/functions/saeed-ai-ui/deno.json supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-ui/core/*.ts
+          deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          node --experimental-strip-types --test tests/*.test.mjs
+          test -s supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql
+          git diff --check
+      - name: Commit exact tested files only on release branch
+        run: |
+          set -euo pipefail
+          git add README.md .github/workflows/deploy-supabase.yml .github/workflows/shared-typecheck.yml supabase/config.toml supabase/functions/_shared/*.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql tests/v93.test.mjs
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 15
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: v9.3 city-aware morning briefing'
+          git push origin HEAD:refs/heads/release/v9.3.0-city-briefing-20260921
