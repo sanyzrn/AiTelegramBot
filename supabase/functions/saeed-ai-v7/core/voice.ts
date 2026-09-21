@@ -4,7 +4,7 @@ import { db } from "./state.ts";
 import { startWork } from "./work.ts";
 import { send } from "./transport.ts";
 import { show } from "./ui.ts";
-import { save } from "./admin.ts";
+import { pref, save } from "./admin.ts";
 
 export async function chooseVoice(m, update) {
   const a = m.voice || m.audio;
@@ -22,8 +22,13 @@ export async function chooseVoice(m, update) {
   );
   if (error) throw Error("VOICE_SAVE");
   // Keep the original Telegram message ID for explicit reply transformations.
-  // A voice is executed immediately without making the user pick a button.
-  await startWork(m, update, "execute", "", null);
+  // An explicit voice-capable tool picked from the tools keyboard wins;
+  // otherwise the voice is executed automatically without a button prompt.
+  const p = await pref(m.from.id),
+    tool = ["transcribe", "summarize", "translate"].includes(p.pending_tool)
+      ? p.pending_tool
+      : "execute";
+  await startWork(m, update, tool, "", null);
 }
 
 export async function voiceAction(id, chat, act, update) {

@@ -3,7 +3,7 @@ import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
 import { calculateExact } from "../_shared/calculator.ts";
-import { parseTimerRequest } from "../_shared/timer.ts";
+import { parseTimerRequest, normalizeTimerDigits } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
 import { GK, admin, db, ready, reply } from "./core/state.ts";
 import { adminInput, allowed, cfg, exportMd, pref, save, stats } from "./core/admin.ts";
@@ -132,8 +132,9 @@ async function message(m, update) {
   }[text];
   if (funTap) return startWork(m, update, funTap, "", null);
   if (await navigate(id, chat, text, p)) return;
-  const doneM = /^انجام\s*شد\s*(\d{1,2})$/.exec(text);
-  if (doneM) return doneTask(id, chat, Number(doneM[1]));
+  // Persian-digit input is the norm here; «انجام شد ۳» must work like «انجام شد 3».
+  const doneM = /^انجام\s*شد\s*([۰-۹\d]{1,2})$/u.exec(text);
+  if (doneM) return doneTask(id, chat, Number(normalizeTimerDigits(doneM[1])));
   if (p.pending_tool === "remind" && text) {
     const timer = parseTimerRequest(text);
     if (timer) return scheduleRealTimer(id, chat, timer, update);

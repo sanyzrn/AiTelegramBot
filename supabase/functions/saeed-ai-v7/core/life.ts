@@ -195,17 +195,27 @@ export async function listTasks(id, chat) {
 }
 
 export async function doneTask(id, chat, n) {
+  // Numbering must match the rendered list exactly: the 30 newest tasks,
+  // oldest first, done items included — otherwise «انجام شد ۳» ticks a
+  // different task than the one the user sees at position 3.
+  if (!Number.isSafeInteger(n) || n < 1 || n > 30) {
+    await send(chat, "🙈 شماره تسک معتبر نیست؛ «✅ تسک‌ها» رو بزن تا لیست رو ببینی.");
+    return;
+  }
   const { data, error: readError } = await db
     .from("saeed_ai_tasks")
-    .select("id,task")
+    .select("id,task,done")
     .eq("telegram_user_id", id)
-    .eq("done", false)
-    .order("id")
-    .limit(20);
+    .order("id", { ascending: false })
+    .limit(30);
   if (readError) throw Error("TASK_READ");
-  const t = (data || [])[n - 1];
+  const t = (data || []).reverse()[n - 1];
   if (!t) {
     await send(chat, "🙈 تسکی با این شماره پیدا نشد؛ «✅ تسک‌ها» رو بزن تا لیست رو ببینی.");
+    return;
+  }
+  if (t.done) {
+    await send(chat, "ℹ️ این تسک قبلاً انجام شده؛ با دکمه ↩️ می‌تونی برگردونیش.");
     return;
   }
   const { error } = await db.from("saeed_ai_tasks").update({ done: true }).eq("id", t.id).eq("telegram_user_id", id).eq("done", false);
