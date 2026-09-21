@@ -1,10 +1,15 @@
 import { briefingExternalSections } from "./briefing-sources.ts";
-/** Saeed AI v9 utilities; call only after authenticated private Telegram gate. */
-export type LifeContext = { db: any; tg: (method: string, payload: Record<string, unknown>) => Promise<any>; send: (chat: number, text: string) => Promise<any> };
+/** Private-chat life utilities. All mutations are scoped to their Telegram owner. */
+export type LifeContext = {
+  db: any;
+  tg: (method: string, payload: Record<string, unknown>) => Promise<any>;
+  send: (chat: number, text: string) => Promise<any>;
+};
 const digits = (value: string) => value.replace(/[۰-۹٠-٩]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d) >= 0 ? "۰۱۲۳۴۵۶۷۸۹".indexOf(d) : "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 const money = (n: bigint) => n.toLocaleString("fa-IR") + " تومان";
 const safeId = (raw: string) => /^\d{1,16}$/.test(raw) ? Number(raw) : NaN;
-/** Currency must be explicit: no ambiguous amount is silently saved. */
+
+/** Currency must be explicit: never invent units or save a price question as spending. */
 export function parseExpense(message: string): { description: string; amount: bigint } | "currency_missing" | null {
   const t = digits(message.trim().replace(/^\/(?:expense|spend)\s+/i, "").replace(/^خرج\s+/u, ""));
   if (/[?؟]/.test(t) || /^(?:قیمت|چقدر|هزینه\s*چقدر|آموزش)/u.test(t)) return null;
@@ -22,6 +27,36 @@ export function parseExpense(message: string): { description: string; amount: bi
   if (amount <= 0n || amount >= 1000000000000n) return null;
   return { description: m[1].trim().slice(0, 200), amount };
 }
+
+/** Use exactly the same renderer for initial task lists and inline refreshes. */
+export async function renderTasks(c: LifeContext, id: number, chat: number, messageId?: number): Promise<void> {
+  const { data, error } = await c.db.from("saeed_ai_tasks")
+    .select("id,task,done,priority,due_at").eq("telegram_user_id", id)
+    .order("id", { ascending: false }).limit(30);
+  if (error) throw Error("TASK_READ");
+  const tasks = (data || []).reverse();
+  const rows = tasks.map((x: any) => [{
+    text: `${x.done ? "↩️" : "✅"} ${String(x.task).slice(0, 40)}`,
+    callback_data: `task:${x.done ? "undo" : "done"}:${x.id}`,
+  }, { text: "🗑", callback_data: `task:delete:${x.id}` }]);
+  const view = {
+    chat_id: chat,
+    text: "✅ تسک‌های من:\n" + (tasks.map((x: any) => `${x.done ? "☑️" : "▫️"} ${x.task}`).join("\n") || "فعلاً خالیه. یک کار جدید بگو."),
+    reply_markup: { inline_keyboard: rows },
+  };
+  if (messageId) {
+    try {
+      await c.tg("editMessageText", { ...view, message_id: messageId });
+      return;
+    } catch (e) {
+      // Telegram rejects editing deleted/old messages and identical content.
+      if (/message is not modified/i.test(String(e))) return;
+      console.error("TASK_EDIT", String(e).slice(0, 80));
+    }
+  }
+  await c.tg("sendMessage", view);
+}
+
 export async function handleLifeMessage(c: LifeContext, id: number, chat: number, text: string, update: number): Promise<boolean> {
   const msg = text.trim();
   if (!msg) return false;
@@ -83,10 +118,7 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
     return true;
   }
   if (/^(?:\/tasks|تسک[‌\s-]*هام|کارهای\s+من)$/iu.test(msg)) {
-    const { data, error } = await c.db.from("saeed_ai_tasks").select("id,task,done,priority,due_at").eq("telegram_user_id", id).eq("done", false).order("id").limit(20);
-    if (error) throw Error("TASK_READ");
-    const rows = (data || []).map((x: any) => [{ text: `✅ ${String(x.task).slice(0, 40)}`, callback_data: `task:done:${x.id}` }, { text: "🗑", callback_data: `task:delete:${x.id}` }]);
-    await c.tg("sendMessage", { chat_id: chat, text: "✅ کارهای باز:\n" + ((data || []).map((x: any) => `• ${x.task}`).join("\n") || "فعلاً خالیه. یک کار جدید بگو."), ...(rows.length ? { reply_markup: { inline_keyboard: rows } } : {}) });
+    await renderTasks(c, id, chat);
     return true;
   }
   const edit = /^\/task\s+(delete|edit)\s+(\d{1,16})(?:\s+([\s\S]{1,200}))?$/i.exec(digits(msg));
@@ -102,6 +134,7 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
   }
   return false;
 }
+
 export async function handleLifeCallback(c: LifeContext, id: number, chat: number, callback: string, messageId?: number): Promise<boolean> {
   const m = /^(task|shop|reminder):(done|delete|undo|snooze|cancel):(\d{1,16})$/.exec(callback);
   if (!m) return false;
@@ -109,9 +142,14 @@ export async function handleLifeCallback(c: LifeContext, id: number, chat: numbe
   if (!Number.isSafeInteger(key)) return true;
   if (m[1] === "task") {
     const query = c.db.from("saeed_ai_tasks");
-    const { data, error } = m[2] === "delete" ? await query.delete().eq("id", key).eq("telegram_user_id", id).select("id") : await query.update({ done: true }).eq("id", key).eq("telegram_user_id", id).eq("done", false).select("id");
+    const desired = m[2] === "done";
+    const { data, error } = m[2] === "delete"
+      ? await query.delete().eq("id", key).eq("telegram_user_id", id).select("id")
+      : await query.update({ done: desired }).eq("id", key).eq("telegram_user_id", id).eq("done", !desired).select("id");
     if (error) throw Error("TASK_CALLBACK");
-    await c.send(chat, data?.length ? "✅ انجام شد." : "ℹ️ قبلاً انجام شده یا دسترسی نداری.");
+    // Always refresh instead of claiming success for old buttons or sending a separate success bubble.
+    await renderTasks(c, id, chat, messageId);
+    if (!data?.length) console.info("TASK_STALE_CALLBACK", id, key);
     return true;
   }
   if (m[1] === "shop") {
