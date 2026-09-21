@@ -1,12 +1,5 @@
-/** Saeed AI saeed-ai-v7 state module. Source moved without behavioral rewrites. */
+/** Shared runtime configuration for the Saeed AI processor. */
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
-import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
-import { calculateExact } from "../../_shared/calculator.ts";
-import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
-import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
-import { unzipSync } from "npm:fflate@0.8.2";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
