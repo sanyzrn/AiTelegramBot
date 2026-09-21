@@ -1,0 +1,108 @@
+name: One-time verified v9.2.0 source import
+on:
+  push:
+    branches: ['release/v9.2.0-reviewed-20260921']
+    paths: ['scripts/v92_reviewed.part3']
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.ref == 'refs/heads/release/v9.2.0-reviewed-20260921'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pinned ZIP diff and restore exactly 14 allowed non-workflow files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.2.0-reviewed-20260921'
+          baseline='5c97573221a95485a3d7f44ec29f18eb6e41ad17'
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$baseline" || { echo 'Main moved; stop and re-review'; exit 1; }
+          git merge-base --is-ancestor "$baseline" HEAD
+          python3 - <<'PY'
+          import base64,hashlib,lzma,struct,re,subprocess
+          from pathlib import Path
+          b64=''.join(Path(f'scripts/v92_reviewed.part{i}').read_text('ascii') for i in range(4))
+          compressed=base64.b64decode(b64,validate=True)
+          assert hashlib.sha256(compressed).hexdigest()=='fe7e9569aff7c1db24e29164c6aafef227c0d6f1e2023e1b20d3d649d598936f','Invalid ZIP delta bundle'
+          raw=lzma.decompress(compressed)
+          assert hashlib.sha256(raw).hexdigest()=='ad222afa3052a9c9cf89961c234dc52df136c4ff98eb83c7d3cccd19d9c0d2b5','Unreviewed payload'
+          assert raw.startswith(b'V92A')
+          length=struct.unpack_from('>I',raw,4)[0]
+          patch=raw[8:8+length].decode('utf-8')
+          patch_paths=['supabase/functions/_shared/life.ts','supabase/functions/_shared/version.ts','supabase/functions/saeed-ai-ui/core/conversation.ts','supabase/functions/saeed-ai-ui/core/search.ts','supabase/functions/saeed-ai-v7/core/admin.ts','supabase/functions/saeed-ai-v7/core/life.ts','supabase/functions/saeed-ai-v7/core/voice.ts','supabase/functions/saeed-ai-v7/core/work.ts','supabase/functions/saeed-ai-v7/index.ts']
+          assert re.findall(r'(?m)^--- a/(.+)$',patch)==patch_paths
+          assert re.findall(r'(?m)^\+\+\+ b/(.+)$',patch)==patch_paths
+          assert not re.search(r'(?m)^(?:diff --git|rename |Binary files)',patch)
+          Path('/tmp/saeed-v92-reviewed.patch').write_text(patch)
+          subprocess.run(['git','apply','--check','/tmp/saeed-v92-reviewed.patch'],check=True)
+          subprocess.run(['git','apply','/tmp/saeed-v92-reviewed.patch'],check=True)
+          expected_full=['README.md','supabase/config.toml','supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md','supabase/functions/_shared/web-search.ts','tests/v92.test.mjs']
+          offset=8+length
+          recovered=[]
+          while offset<len(raw):
+            assert offset+2<=len(raw)
+            size=struct.unpack_from('>H',raw,offset)[0];offset+=2
+            assert 0<size<200 and offset+size+4<=len(raw)
+            path=raw[offset:offset+size].decode('utf-8');offset+=size
+            n=struct.unpack_from('>I',raw,offset)[0];offset+=4
+            assert 0<n<20000 and offset+n<=len(raw)
+            assert path in expected_full and path not in recovered, f'Unexpected path {path}'
+            dest=Path(path)
+            assert not dest.is_symlink()
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            dest.write_bytes(raw[offset:offset+n]);offset+=n
+            recovered.append(path)
+          assert recovered==expected_full
+          expected={
+            'supabase/functions/_shared/life.ts':'df6d9406fb9bc53d1a2cb6fc4fa060a5bd1d6581',
+            'supabase/functions/_shared/version.ts':'c572e4a3f134a919e02722f59496a056b748d3cd',
+            'supabase/functions/saeed-ai-ui/core/conversation.ts':'070c5b3fe282e611181e2a7f66be13b268aa2a89',
+            'supabase/functions/saeed-ai-ui/core/search.ts':'0292c1aaea5043ec123631798eb0e867579bed6c',
+            'supabase/functions/saeed-ai-v7/core/admin.ts':'d76abc005da9933af6397df66b63bef18cc2ecae',
+            'supabase/functions/saeed-ai-v7/core/life.ts':'93cf58f0fb7afbef9eb001213c26f70b567b9e7e',
+            'supabase/functions/saeed-ai-v7/core/voice.ts':'0efc3a3243ad2b358574efb5fd1344fb9a5b4454',
+            'supabase/functions/saeed-ai-v7/core/work.ts':'2521b0dc4c68123fa011d963e8eaaa0b39fd4a93',
+            'supabase/functions/saeed-ai-v7/index.ts':'4a7db1e02c547a71c3a93619bead85415be98ed2',
+            'README.md':'dfa4ea64f452502c8d4d512f8d2ec3ae869a31ca',
+            'supabase/config.toml':'5ee7b61f587842a04934955db4a205e5e53fb0d0',
+            'supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md':'a89b8b2da7a880bcb4cadac89e9bab2f421c3f99',
+            'supabase/functions/_shared/web-search.ts':'317f3ce3c4aed7e7516c084a7a745033c1c5814a',
+            'tests/v92.test.mjs':'37d68ca50b661441628f2542bcbd84b7c4e67d9a',
+          }
+          assert set(expected)==set(patch_paths+recovered)
+          for path,sha in expected.items():
+            actual=subprocess.check_output(['git','hash-object',path],text=True).strip()
+            assert actual==sha,f'{path} does not match reviewed ZIP'
+          print('PASS: exact 14 reviewed non-workflow files verified; main baseline unchanged')
+          PY
+      - name: Deno check every function and run all 35 tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts
+          deno check --config supabase/functions/saeed-ai-ui/deno.json supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-ui/core/*.ts
+          deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          node --experimental-strip-types --test tests/*.test.mjs
+      - name: Commit only 14 source files on release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.2.0-reviewed-20260921'
+          git add -- README.md supabase/config.toml supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/core/life.ts supabase/functions/saeed-ai-v7/core/admin.ts supabase/functions/saeed-ai-v7/core/voice.ts supabase/functions/saeed-ai-v7/core/work.ts supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-ui/core/search.ts supabase/functions/saeed-ai-ui/core/conversation.ts supabase/functions/_shared/web-search.ts supabase/functions/_shared/version.ts supabase/functions/_shared/life.ts tests/v92.test.mjs
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 14
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: import verified Saeed AI v9.2.0 source and regressions'
+          git push origin HEAD:refs/heads/release/v9.2.0-reviewed-20260921
