@@ -1,7 +1,7 @@
 import { inferToolIntent, type ToolIntent } from "./tool-intent.ts";
 const names = ["chat", "remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing"] as const;
 const allowed = new Set<string>(names);
-const hint = /(?:یاد|ریم[ای]ندر|فردا|ساعت|دقیقه|امروز|هفته|خبر|قیمت|جست|آنلاین|بگرد|گوگل|گیت|ریپو|مخزن|خلاصه|ترجمه|بازنویسی|محاسبه|حساب|ایمیل|تسک|وظیفه|کارام|کارها|ایده|خرج|هزینه|ناهار|بنزین|خرید|صبح.نامه|remind|tomorrow|search|latest|news|github|summari[sz]e|translate|rewrite|calculate|email|task|expense|shopping|briefing)/iu;
+const hint = /(?:یاد|ریم[ای]ندر|فردا|ساعت|دقیقه|امروز|هفته|خبر|قیمت|جست|آنلاین|بگرد|گوگل|گیت|ریپو|مخزن|خلاصه|ترجمه|بازنویسی|محاسبه|حساب|ایمیل|تسک|وظیفه|کارام|کارها|ایده|خرج|هزینه|ناهار|بنزین|خرید|صبح.نامه|شهر\s*من|شهرم|شهر\s*صبح.نامه|remind|tomorrow|search|latest|news|github|summari[sz]e|translate|rewrite|calculate|email|task|expense|shopping|briefing|\/city)/iu;
 /** Classify only; allowlisted output cannot execute arbitrary tools. Fail closed to chat. */
 export async function selectToolIntent(input: string, key: string, model: string): Promise<ToolIntent> {
   const direct = inferToolIntent(input);

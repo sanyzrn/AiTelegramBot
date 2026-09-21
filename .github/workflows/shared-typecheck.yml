@@ -42,5 +42,6 @@ jobs:
             supabase/functions/_shared/intent-model.ts \
             supabase/functions/_shared/life.ts \
             supabase/functions/_shared/web-search.ts \
+            supabase/functions/_shared/morning-voice.ts \
             supabase/functions/_shared/version.ts
           echo 'PASS: extracted modules typecheck without ts-nocheck'

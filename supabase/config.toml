@@ -2,7 +2,7 @@
 # Production deployment: search mode resets on greeting, Home, /start, and API failure; JWT flags unchanged.
 # Tone release 7.8: playful, warm witty style and original seventh-century-inspired mystic style.
 # Settings UX: confirm a saved tone, answer length, or language once, then return to Settings.
-# v9.2.0: voice tool selection, empty-list markup guard, shared grounded web search, fail-closed admin flows.
+# v9.3.0: user-selectable briefing city with geocoding, energetic AI morning voice, weather-based clothing tips.
 # Deploy three functions after applying supabase/migrations including 20260921040749_saeed_ai_v91_keyboard_page_states.sql.
 [functions.saeed-ai-ui]
 verify_jwt = false

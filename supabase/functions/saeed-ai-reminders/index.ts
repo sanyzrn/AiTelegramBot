@@ -1,9 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { APP_VERSION } from "../_shared/version.ts";
 import { nextOccurrence, type RepeatRule } from "../_shared/repeat.ts";
-import { briefingExternalSections } from "../_shared/briefing-sources.ts";
+import { fetchCityWeather, fetchIranMarket, type CityRef } from "../_shared/briefing-sources.ts";
+import { composeMorningVoice, fallbackIntro, dayQuote, type MorningFacts, type VoiceConfig } from "../_shared/morning-voice.ts";
 const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
+const GKEY = Deno.env.get("GEMINI_API_KEY") || "";
+const RKEY = Deno.env.get("OPENROUTER_API_KEY") || "";
 let KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 try { KEY = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}").default || KEY; } catch {}
 const db = BASE && KEY ? createClient(BASE, KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
@@ -56,14 +59,14 @@ async function dispatchReminders() {
   return { claimed: (data || []).length, sent, failed };
 }
 async function dispatchBriefings() {
-  const { data, error } = await db!.rpc("saeed_ai_claim_briefings", { p_limit: 30 });
+  const { data, error } = await db!.rpc("saeed_ai_claim_briefings", { p_limit: 6 });
   if (error) throw Error("BRIEF_CLAIM_" + error.code);
   let sent = 0, failed = 0;
   for (const item of data || []) {
     const uid = Number(item.telegram_user_id), chat = Number(item.telegram_chat_id);
     try {
       const { data: p, error: prefError } = await db!.from("saeed_ai_briefing_preferences")
-        .select("enabled,timezone").eq("telegram_user_id", uid).maybeSingle();
+        .select("enabled,timezone,city,city_lat,city_lon,city_label").eq("telegram_user_id", uid).maybeSingle();
       if (prefError) throw Error("BRIEF_PREF");
       if (!p?.enabled) continue;
       const [tasks, rems, expenses] = await Promise.all([
@@ -77,9 +80,36 @@ async function dispatchBriefings() {
       const start = new Date(Date.parse(day + "T00:00:00Z") - offset * 60000).getTime();
       const todayRems = (rems.data || []).filter((r: any) => { const at = new Date(r.remind_at).getTime(); return at >= start && at < start + 86400000; }).slice(0, 7);
       const total = (expenses.data || []).reduce((sum: bigint, x: any) => sum + BigInt(x.amount_toman), 0n);
-      const body = `☀️ صبح‌نامه ${day}\n\n✅ کارهای باز:\n${(tasks.data || []).map((x: any) => "• " + x.task).join("\n") || "موردی نیست."}\n\n⏰ یادآورهای امروز:\n${todayRems.map((x: any) => "• " + x.note + "، " + new Date(x.remind_at).toLocaleTimeString("fa-IR", { timeZone: p.timezone, hour: "2-digit", minute: "2-digit" })).join("\n") || "موردی نیست."}\n\n💰 خرج ثبت‌شده ۲۴ ساعت گذشته${(expenses.data || []).length === 200 ? " (۲۰۰ مورد اخیر)" : ""}: ${total.toLocaleString("fa-IR")} تومان\n\nبرای توقف: «صبح‌نامه خاموش».`;
-      const external = await briefingExternalSections();
-      await send(chat, body + "\n\n" + external);
+      const city: CityRef = p.city_lat !== null && p.city_lat !== undefined && p.city_lon !== null && p.city_lon !== undefined
+        ? { lat: Number(p.city_lat), lon: Number(p.city_lon), label: String(p.city_label || "شهر تو") } : { lat: 35.6892, lon: 51.3890, label: "تهران" };
+      const dayLabel = new Intl.DateTimeFormat("fa-IR", { timeZone: p.timezone, weekday: "long", day: "numeric", month: "long" }).format(new Date());
+      const [weather, market] = await Promise.all([fetchCityWeather(city, fetch, Date.now()), fetchIranMarket(fetch, Date.now())]);
+      // Six users per claim: weather/market 6.5s + shared AI deadline 7s + Telegram send timeout 20s
+      // per user, with headroom for database IO, stay below the five-minute lease.
+      const facts: MorningFacts = {
+        dayLabel, cityLabel: city.label,
+        weather: weather?.values ? { ...weather.values } : null,
+        tasks: (tasks.data || []).map((x: any) => String(x.task)),
+        reminders: todayRems.map((r: any) => ({ note: String(r.note), time: new Date(r.remind_at).toLocaleTimeString("fa-IR", { timeZone: p.timezone, hour: "2-digit", minute: "2-digit" }) })),
+        expense: total > 0n ? total.toLocaleString("fa-IR") + " تومان" : null,
+        marketKnown: !!market,
+      };
+      const voiceCfg = await morningVoiceConfig();
+      const voice = await composeMorningVoice(voiceCfg, facts, fetch);
+      const intro = voice || fallbackIntro(facts);
+      const { signoff } = dayQuote(day);
+      const body = [
+        `☀️ صبح‌نامه ${dayLabel}`,
+        intro,
+        todayRems.length ? "⏰ یادآورهای امروز:\n" + todayRems.map((x: any) => "• " + x.note + "، " + new Date(x.remind_at).toLocaleTimeString("fa-IR", { timeZone: p.timezone, hour: "2-digit", minute: "2-digit" })).join("\n") : "",
+        (tasks.data || []).length ? "✅ کارهای باز:\n" + (tasks.data || []).map((x: any) => "• " + x.task).join("\n") : "",
+        total > 0n ? `💰 خرج ثبت‌شده ۲۴ ساعت گذشته${(expenses.data || []).length === 200 ? " (۲۰۰ مورد اخیر)" : ""}: ${total.toLocaleString("fa-IR")} تومان` : "",
+        weather?.line || "🌤 آب‌وهوا: منبع معتبر فعلاً در دسترس نیست.",
+        market?.line || "",
+        signoff,
+        "اگه دوست نداشتی، فقط بگو «صبح‌نامه خاموش» 🌙",
+      ].filter(Boolean).join("\n\n");
+      await send(chat, body);
       const { error: saveError } = await db!.from("saeed_ai_briefing_preferences")
         .update({ last_sent_day: day, lease_until: null }).eq("telegram_user_id", uid).eq("enabled", true);
       if (saveError) throw Error("BRIEF_ACK");
@@ -92,10 +122,26 @@ async function dispatchBriefings() {
   }
   return { claimed: (data || []).length, sent, failed };
 }
+/** The morning voice follows the same provider/model settings as the chat AI. */
+async function morningVoiceConfig(): Promise<VoiceConfig> {
+  if (!db) return {};
+  try {
+    const { data, error } = await db.from("telegram_bot_config").select("setting_key,setting_value");
+    if (error || !data) return {};
+    const x = new Map((data || []).map((v: any) => [String(v.setting_key), String(v.setting_value)]));
+    return {
+      geminiKey: GKEY || undefined,
+      openrouterKey: RKEY || undefined,
+      geminiModel: x.get("model") || undefined,
+      openrouterModel: x.get("openrouter_model") || undefined,
+      prefer: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
+    };
+  } catch { return {}; }
+}
 Deno.serve(async (request) => {
   const url = new URL(request.url);
   if (request.method === "GET" && url.searchParams.has("health"))
-    return Response.json({ version: APP_VERSION, configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true, v9_market_weather: true }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ version: APP_VERSION, configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true, v9_market_weather: true, v93_city_voice: true }, { headers: { "Cache-Control": "no-store" } });
   if (request.method !== "POST") return new Response("Not found", { status: 404 });
   if (!configured()) return new Response("Unavailable", { status: 503 });
   const candidate = request.headers.get("X-Saeed-Cron-Secret") || "";
