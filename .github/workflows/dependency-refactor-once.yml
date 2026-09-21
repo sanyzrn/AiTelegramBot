@@ -14,17 +14,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
+          fetch-depth: 4
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run previous audited refactor and normalize extracted file
+      - name: Run pinned baseline transform and normalize extracted file
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/refactor/dependency-cleanup-20260921'
+          git cat-file -e '58e979ec62be96a0a06f3b809e186f07402f862e^{commit}'
           python3 - <<'PY'
           from pathlib import Path
           import subprocess,textwrap
