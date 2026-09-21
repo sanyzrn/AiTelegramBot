@@ -1,26 +1,93 @@
-name: Inspect v9.1.0 archive completeness
+name: One-time verified v9.1.0 source import
 on:
   push:
     branches: ['release/v9.1.0-reviewed-20260921']
+    paths: ['scripts/v91_final.part3']
 permissions:
-  contents: read
+  contents: write
 jobs:
-  inspect:
+  verified-import:
+    if: github.ref == 'refs/heads/release/v9.1.0-reviewed-20260921'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Probe partial archive without extraction
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged production baseline and restore exact reviewed files
+        shell: bash
         run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.1.0-reviewed-20260921'
+          baseline='6fd63d9bf60ecf21e0ca5155bd7c5864bd399269'
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$baseline" || { echo 'Main changed, refusing stale release'; exit 1; }
+          git merge-base --is-ancestor "$baseline" HEAD
           python3 - <<'PY'
           from pathlib import Path
-          import base64,hashlib,lzma
-          p=Path('scripts/v91_payload.b64').read_text().strip()
-          raw=base64.b64decode(p+'='*((-len(p))%4),validate=True)
-          decoder=lzma.LZMADecompressor()
-          try:
-            data=decoder.decompress(raw)
-            print('encoded',len(p),'decoded',len(raw),'uncompressed',len(data),'eof',decoder.eof,'sha256',hashlib.sha256(raw).hexdigest())
-          except lzma.LZMAError as e:
-            print('ERROR: payload corrupt',repr(e))
-            raise
+          import base64, hashlib, lzma, struct
+          encoded=''.join(Path(f'scripts/v91_final.part{i}').read_text('ascii') for i in range(4))
+          compressed=base64.b64decode(encoded,validate=True)
+          assert hashlib.sha256(compressed).hexdigest()=='57be7545a208700ae048178010c84cdfcaaf8826ae20c077183134ae18f03294','Compressed payload hash differs'
+          data=lzma.decompress(compressed)
+          assert hashlib.sha256(data).hexdigest()=='567dc84b6ed1a34e25adcb8c90cc18706fdcf568242040258140ff0374af1f1d','Reviewed file bundle differs'
+          allowed={
+            '.env.example', '.github/workflows/deploy-supabase.yml',
+            '.github/workflows/import-supabase.yml', '.github/workflows/shared-typecheck.yml',
+            'README.md', 'supabase/config.toml', 'supabase/functions/_shared/version.ts',
+            'supabase/functions/saeed-ai-reminders/index.ts',
+            'supabase/functions/saeed-ai-ui/core/config.ts', 'supabase/functions/saeed-ai-ui/index.ts',
+            'supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md',
+            'supabase/functions/saeed-ai-v7/core/admin.ts', 'supabase/functions/saeed-ai-v7/core/life.ts',
+            'supabase/functions/saeed-ai-v7/core/work.ts', 'supabase/functions/saeed-ai-v7/index.ts',
+            'supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql',
+            'tests/gateway-routing.test.mjs',
+          }
+          offset=0; recovered={}
+          while offset<len(data):
+            assert offset+2<=len(data)
+            size=struct.unpack_from('>H',data,offset)[0];offset+=2
+            assert 0<size<200
+            assert offset+size+4<=len(data)
+            path=data[offset:offset+size].decode('utf-8');offset+=size
+            n=struct.unpack_from('>I',data,offset)[0];offset+=4
+            assert 0<n<25000 and offset+n<=len(data)
+            assert path in allowed and path not in recovered, f'Unexpected path: {path}'
+            recovered[path]=data[offset:offset+n];offset+=n
+          assert set(recovered)==allowed and len(recovered)==17,'Missing or unexpected changed files'
+          for name,content in recovered.items():
+            dest=Path(name)
+            assert not dest.is_symlink(),name
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            dest.write_bytes(content)
+          print('PASS: verified and restored exactly 17 user-supplied source files (migration filename normalized to deployed history)')
           PY
+      - name: Deno type checks and all Node regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts
+          deno check --config supabase/functions/saeed-ai-ui/deno.json supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-ui/core/*.ts
+          deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          node --experimental-strip-types --test tests/*.test.mjs
+          grep -Fq '20260921040749_saeed_ai_v91_keyboard_page_states.sql' .github/workflows/deploy-supabase.yml
+          grep -Fq '20260921040749_saeed_ai_v91_keyboard_page_states.sql' tests/gateway-routing.test.mjs
+      - name: Retire temporary tooling and commit only on the release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.1.0-reviewed-20260921'
+          git rm -- .github/workflows/verified-v91-import-once.yml scripts/v91_payload.b64 scripts/v91_final.part0 scripts/v91_final.part1 scripts/v91_final.part2 scripts/v91_final.part3
+          git add -- .env.example .github/workflows/deploy-supabase.yml .github/workflows/import-supabase.yml .github/workflows/shared-typecheck.yml README.md supabase/config.toml supabase/functions/_shared/version.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-ui/core/config.ts supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/core/admin.ts supabase/functions/saeed-ai-v7/core/life.ts supabase/functions/saeed-ai-v7/core/work.ts supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql tests/gateway-routing.test.mjs
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 23
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: apply reviewed Saeed AI v9.1.0 fixes from supplied ZIP'
+          git push origin HEAD:refs/heads/release/v9.1.0-reviewed-20260921
