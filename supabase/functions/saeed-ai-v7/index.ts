@@ -167,7 +167,7 @@ async function message(m, update) {
   if (inferred === "tasks") return saveTasks(id, chat, requestText, update);
   if (["expenses", "shopping", "briefing"].includes(inferred)) {
     if (await handleLifeMessage({ db, tg, send }, id, chat, requestText, update)) return;
-    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ برای گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش.");
+    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ برای گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
   }
   if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
   if (inferred === "repo") {

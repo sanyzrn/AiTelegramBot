@@ -1,4 +1,4 @@
-import { briefingExternalSections } from "./briefing-sources.ts";
+import { briefingExternalSections, geocodeCity, fetchCityWeather, type CityRef } from "./briefing-sources.ts";
 /** Private-chat life utilities. All mutations are scoped to their Telegram owner. */
 export type LifeContext = {
   db: any;
@@ -59,21 +59,78 @@ export async function renderTasks(c: LifeContext, id: number, chat: number, mess
   await c.tg("sendMessage", view);
 }
 
+/** City commands for the morning briefing. Question-y phrases never mutate anything. Returns true when the message was recognized. */
+const CITY_NAME_BAD = /[?؟!،,]|چیه|چی\s*هست|کجاست|کدوم|کدام|چطور|چقدر|چند|پاک|حذف|نمی|بگو|باشه|لطف/u;
+const cityClear = /^(?:\/city\s+(?:clear|reset|off|remove|delete)|شهر(?:\s+صبح[‌\s-]*نامه)?(?:\s+من)?\s*(?:رو\s*)?(?:پاک|حذف)\s+کن)$/iu;
+const cityShow = /^(?:\/city|شهر\s*من|شهرم)(?:\s*(?:چیه|چی\s*هست)\s*[?؟]?|\s*[?؟])?$/iu;
+const citySet = /^(?:\/city\s+(.+?)|شهر(?:\s+صبح[‌\s-]*نامه)?(?:\s+من)?\s*[:：]\s*(.+?)|شهر\s+صبح[‌\s-]*نامه\s+(.+?)|(?:شهر\s*من|شهرم)\s+(.+?))(?:\s+(?:رو|را))?(?:\s+(?:بذار|بگذار|بزار|ثبت\s*کن|تنظیم\s*کن))?\s*$/iu;
+
+export async function handleCityMessage(c: LifeContext, id: number, chat: number, msg: string): Promise<boolean> {
+  if (cityClear.test(msg)) {
+    const { error } = await c.db.from("saeed_ai_briefing_preferences").update({ city: null, city_lat: null, city_lon: null, city_label: null }).eq("telegram_user_id", id);
+    if (error) throw Error("BRIEF_CITY_CLEAR");
+    await c.send(chat, "✅ شهرت پاک شد؛ فعلاً به‌جاش هوای تهران رو نگاه می‌کنم. هر وقت خواستی دوباره بگو «شهر من ...» 🏙");
+    return true;
+  }
+  if (cityShow.test(msg)) {
+    const { data, error } = await c.db.from("saeed_ai_briefing_preferences").select("city_label,enabled").eq("telegram_user_id", id).maybeSingle();
+    if (error) throw Error("BRIEF_CITY_SHOW");
+    await c.send(chat, data?.city_label
+      ? `🏙 شهرت رو ${data.city_label} گذاشتی${data.enabled ? "؛ صبح‌نامه‌هات هوای همین‌جا رو می‌گن 🌤" : ""}. برای عوض‌کردن بگو «شهر من ...».`
+      : "هنوز شهری انتخاب نکردی! بگو «شهر من اصفهان» یا «/city Isfahan» تا صبح‌نامه هوای شهر خودت رو برات بیاره 🌤");
+    return true;
+  }
+  const m = citySet.exec(msg);
+  if (!m) return false;
+  const name = [m[1], m[2], m[3], m[4]].find((x) => x?.trim())?.trim().replace(/\s+/g, " ").replace(/^[«'"“]+|[»'"”]+$/g, "") || "";
+  if (name.length < 2 || name.length > 60 || !/[\p{L}\p{N}]/u.test(name) || CITY_NAME_BAD.test(name)) {
+    await c.send(chat, "🤔 اسم شهر رو واضح بنویس؛ مثلاً «شهر من اصفهان» یا «/city Isfahan». سؤال دیگه‌ای هم داری بپرس!");
+    return true;
+  }
+  const ref = await geocodeCity(name);
+  if (!ref) {
+    await c.send(chat, `هرچه گشتم شهری به اسم «${name}» پیدا نکردم 🤔 انگلیسی یا رسمی‌ترش رو امتحان کن؛ مثلاً «شهر من Isfahan» یا «شهر من رشت». فعلاً چیزی هم عوض نکردم.`);
+    return true;
+  }
+  const patch = { city: name, city_lat: ref.lat, city_lon: ref.lon, city_label: ref.label };
+  const { data: existing, error: readError } = await c.db.from("saeed_ai_briefing_preferences").select("telegram_user_id,enabled").eq("telegram_user_id", id).maybeSingle();
+  if (readError) throw Error("BRIEF_CITY_READ");
+  // Update keeps an existing subscription exactly as it is; insert never enables silently.
+  const { error: saveError } = existing
+    ? await c.db.from("saeed_ai_briefing_preferences").update(patch).eq("telegram_user_id", id)
+    : await c.db.from("saeed_ai_briefing_preferences").insert({ telegram_user_id: id, telegram_chat_id: chat, enabled: false, ...patch });
+  if (saveError) throw Error("BRIEF_CITY_SAVE");
+  const weather = await fetchCityWeather(ref, fetch, Date.now());
+  await c.send(chat, [
+    `🏙 ثبت شد! شهرت رو ${ref.label} گذاشتم.`,
+    "از این به بعد صبح‌نامه هوای همین‌جا رو چک می‌کنه و بهت می‌گه چی بپوشی 👕",
+    weather ? "\n" + weather.line : "",
+    existing?.enabled ? "" : "\nراستی صبح‌نامه‌ت خاموشه؛ بگو «صبح‌نامه روشن» تا هر روز صبح سر حوصله‌ام باشم 🙂",
+  ].filter(Boolean).join("\n"));
+  return true;
+}
+
 export async function handleLifeMessage(c: LifeContext, id: number, chat: number, text: string, update: number): Promise<boolean> {
   const msg = text.trim();
   if (!msg) return false;
-  if (/^(?:\/briefing_test|صبح[‌\s-]*نامه\s+(?:تست|الان))$/iu.test(msg)) {
-    const sections = await briefingExternalSections();
-    await c.send(chat, "🧪 پیش‌نمایش منابع صبح‌نامه (فقط نمایش، بدون تغییر تنظیمات):\n\n" + sections);
+  const briefTest = /^(?:\/briefing_test|صبح[‌\s-]*نامه\s+(?:تست|الان))$/iu.exec(msg);
+  if (briefTest) {
+    const { data: pref } = await c.db.from("saeed_ai_briefing_preferences").select("city_lat,city_lon,city_label").eq("telegram_user_id", id).maybeSingle();
+    const city: CityRef | null = pref?.city_lat !== null && pref?.city_lat !== undefined ? { lat: Number(pref.city_lat), lon: Number(pref.city_lon), label: String(pref.city_label || "شهر تو") } : null;
+    const sections = await briefingExternalSections(fetch, Date.now(), city);
+    await c.send(chat, `🧪 پیش‌نمایش منابع صبح‌نامه برای ${city?.label || "تهران"} (فقط نمایش، بدون تغییر تنظیمات):\n\n` + sections);
     return true;
   }
+  if (await handleCityMessage(c, id, chat, msg)) return true;
   const brief = /^(?:\/briefing(?:\s+(on|off))?|صبح[‌\s-]*نامه(?:\s+(روشن|خاموش|فعال|غیرفعال))?)$/iu.exec(msg);
   if (brief) {
     const mode = brief[1] || brief[2] || "";
     if (!mode) {
-      const { data, error } = await c.db.from("saeed_ai_briefing_preferences").select("enabled,send_hour,timezone").eq("telegram_user_id", id).maybeSingle();
+      const { data, error } = await c.db.from("saeed_ai_briefing_preferences").select("enabled,send_hour,timezone,city_label").eq("telegram_user_id", id).maybeSingle();
       if (error) throw Error("BRIEF_PREF");
-      await c.send(chat, data?.enabled ? `☀️ صبح‌نامه روشنه؛ ساعت ${data.send_hour}:۰۰ به وقت ${data.timezone}. برای خاموش‌کردن: «صبح‌نامه خاموش»` : "☀️ صبح‌نامه خاموشه. برای فعال‌کردن: «صبح‌نامه روشن»");
+      await c.send(chat, data?.enabled
+        ? `☀️ صبح‌نامه روشنه؛ هر روز ساعت ${data.send_hour}:۰۰ به وقت ${data.timezone} برایت می‌فرستم${data.city_label ? ` و هوای ${data.city_label} رو هم چک می‌کنم 🌤` : ""}.\nبرای خاموش‌کردن: «صبح‌نامه خاموش»`
+        : "☀️ صبح‌نامه خاموشه. بگو «صبح‌نامه روشن» تا هر روز صبح یه پیام پرانرژی با برنامه‌ات و هوای شهرت برات بفرستم 🙂");
       return true;
     }
     const enabled = /^(?:on|روشن|فعال)$/iu.test(mode);
@@ -81,9 +138,11 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
       const { error: accessError } = await c.db.from("telegram_bot_user_access").upsert({ telegram_user_id: id, enabled: true }, { onConflict: "telegram_user_id" });
       if (accessError) throw Error("BRIEF_ACCESS");
     }
-    const { error } = await c.db.from("saeed_ai_briefing_preferences").upsert({ telegram_user_id: id, telegram_chat_id: chat, enabled, lease_until: null, updated_at: new Date().toISOString() }, { onConflict: "telegram_user_id" });
+    const { data: saved, error } = await c.db.from("saeed_ai_briefing_preferences").upsert({ telegram_user_id: id, telegram_chat_id: chat, enabled, lease_until: null, updated_at: new Date().toISOString() }, { onConflict: "telegram_user_id" }).select("send_hour,timezone,city_label,enabled").maybeSingle();
     if (error) throw Error("BRIEF_SAVE");
-    await c.send(chat, enabled ? "✅ صبح‌نامه فعال شد. هر روز ساعت ۷ صبح به وقت تهران، تسک‌ها و یادآورهای امروز رو می‌فرستم. اطلاعات آب‌وهوا و ارز بدون منبع معتبر اضافه نمی‌شن. ☀️" : "✅ صبح‌نامه خاموش شد.");
+    await c.send(chat, saved?.enabled
+      ? `✅ صبح‌نامه روشن شد! 🎉\nهر روز ساعت ${saved.send_hour}:۰۰ صبح یه پیام دوستانه برات می‌فرستم: برنامه‌ی امروزت، هوای ${saved.city_label || "تهران"} و اینکه چی بپوشی 🌤\nاگه شهر دیگه‌ای زندگی می‌کنی، فقط بگو «شهر من ...» تا هوای همون‌جا رو نگاه کنم.\nهوا و قیمت‌ها فقط با منبع معتبر میان؛ خودم چیزی از خودم نمی‌سازم.\nخاموش‌کردنش هم راحته: «صبح‌نامه خاموش».`
+      : "✅ صبح‌نامه خاموش شد. هر وقت دلت خواست برگردی، همین‌جا منتظرم 🙂");
     return true;
   }
   if (/^(?:\/expenses|خرج[‌\s-]*هام|گزارش\s*خرج(?:‌|\s)*ها)$/iu.test(msg)) {

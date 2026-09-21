@@ -10,6 +10,8 @@ export function inferToolIntent(text: string): ToolIntent {
       /(?:بذار|بگذار|بزن|تنظیم\s*کن|ست\s*کن|شروع\s*کن|set\s+(?:a\s+)?timer|start\s+(?:a\s+)?timer)/iu.test(input) &&
       !/(?:چرا|کار\s*نمی[‌\s]*کن|\?|؟)/iu.test(input)) return "remind";
   if (/^(?:\/briefing|صبح[‌\s-]*نامه)/iu.test(input)) return "briefing";
+  // City selection belongs to the morning briefing: /city, «شهر من …», «شهرم …», «شهر صبح‌نامه …».
+  if (/^\/city(?:\s|$)|^شهر(?:\s*من\s|\s*من$|\s*من\s*[:：]|\s*م\s|\s*م$|\s*صبح[‌\s-]*نامه\s|\s*[:：])/iu.test(input)) return "briefing";
   if (/^(?:\/shopping|لیست\s+خرید|به\s+لیست\s+خرید\s+اضافه\s+کن|خرید[‌\s-]*هام)/iu.test(input)) return "shopping";
   if (/^(?:\/expense|\/expenses|\/spend|خرج\s+|خرج[‌\s-]*هام|گزارش\s+خرج)/iu.test(input) || /^(?:ناهار|شام|صبحانه|بنزین|تاکسی|قهوه|خوراک|خرید|قبض|کرایه|اجاره|دارو|نان|سوخت|پارکینگ|سوپرمارکت)\s+[۰-۹٠-٩\d,٬،]+(?:\s*(?:هزار|میلیون))?\s*(?:تومان|تومن|ریال)?$/iu.test(input)) return "expenses";
   if (/(?:یادم\s*بنداز|یادآور(?:ی)?\s*(?:بذار|بگذار|ثبت|تنظیم|بساز)|ریمایندر\s*(?:بذار|بگذار|ثبت|بساز)|remind\s+me|set\s+(?:a\s+)?reminder)/iu.test(input)) return "remind";
