@@ -68,13 +68,14 @@ jobs:
           node --experimental-strip-types --test tests/*.test.mjs
           test -s supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql
           git diff --check
-      - name: Commit exact tested files only on release branch
+      - name: Commit only reviewed non-workflow sources on release branch
         run: |
           set -euo pipefail
-          git add README.md .github/workflows/deploy-supabase.yml .github/workflows/shared-typecheck.yml supabase/config.toml supabase/functions/_shared/*.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql tests/v93.test.mjs
+          git restore -- .github/workflows/deploy-supabase.yml .github/workflows/shared-typecheck.yml
+          git add README.md supabase/config.toml supabase/functions/_shared/*.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql tests/v93.test.mjs
           git diff --cached --check
-          test "$(git diff --cached --name-only | wc -l)" -eq 15
+          test "$(git diff --cached --name-only | wc -l)" -eq 13
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: v9.3 city-aware morning briefing'
+          git commit -m 'feat: v9.3 city-aware morning briefing source and migration'
           git push origin HEAD:refs/heads/release/v9.3.0-city-briefing-20260921
