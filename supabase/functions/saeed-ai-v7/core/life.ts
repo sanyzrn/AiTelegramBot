@@ -28,6 +28,13 @@ export async function sweep() {
       .delete()
       .eq("sent", true)
       .lt("created_at", cutoff);
+    // Reminders that exhausted their delivery attempts stay failed forever and
+    // are never claimed again; sweep them out like delivered ones.
+    await db
+      .from("saeed_ai_reminders")
+      .delete()
+      .eq("status", "failed")
+      .lt("created_at", cutoff);
     await db
       .from("saeed_ai_tasks")
       .delete()

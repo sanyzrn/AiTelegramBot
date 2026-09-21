@@ -1,4 +1,5 @@
 /** Saeed AI saeed-ai-v7 index module. Source moved without behavioral rewrites. */
+import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
 import { calculateExact } from "../_shared/calculator.ts";
@@ -201,7 +202,7 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "GET" && url.searchParams.has("health"))
     return reply({
-      version: "9.0.0",
+      version: APP_VERSION,
       configured: ready(),
       tone_modes: true,
       fun_pack: true,
@@ -225,7 +226,7 @@ Deno.serve(async (req) => {
     });
   if (req.method === "GET" && url.searchParams.has("selftest"))
     return reply({
-      version: "9.0.0",
+      version: APP_VERSION,
       fun_menu:
         rows("fun", false).flat().length === 7 &&
         rows("fun", false).flat().includes("🔮 طالع"),

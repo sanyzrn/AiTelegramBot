@@ -36,7 +36,10 @@ jobs:
             supabase/functions/_shared/briefing-sources.ts \
             supabase/functions/_shared/calculator.ts \
             supabase/functions/_shared/repeat.ts \
+            supabase/functions/_shared/timer.ts \
+            supabase/functions/_shared/voice-intent.ts \
             supabase/functions/_shared/tool-intent.ts \
             supabase/functions/_shared/intent-model.ts \
-            supabase/functions/_shared/life.ts
+            supabase/functions/_shared/life.ts \
+            supabase/functions/_shared/version.ts
           echo 'PASS: extracted modules typecheck without ts-nocheck'

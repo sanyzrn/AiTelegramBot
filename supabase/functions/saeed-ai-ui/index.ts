@@ -1,4 +1,5 @@
 /** Saeed AI saeed-ai-ui index module. Source moved without behavioral rewrites. */
+import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { BASE, GK, admin, db, out, ready } from "./core/state.ts";
 import { esc, stripRepeatedIntro } from "./core/output.ts";
@@ -12,7 +13,7 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "GET" && url.searchParams.has("health"))
     return out({
-      version: "9.0.0",
+      version: APP_VERSION,
       configured: ready(),
       tone_modes: true,
       fun_pack: true,
@@ -35,7 +36,7 @@ Deno.serve(async (req) => {
         false,
       );
     return out({
-      version: "9.0.0",
+      version: APP_VERSION,
       fun_labels_routed: [
         "⏰ یادآور",
         "🎉 سرگرمی",
@@ -60,7 +61,10 @@ Deno.serve(async (req) => {
     });
   }
   if (req.method === "GET" && url.searchParams.has("setup")) {
-    if (!ready()) return out({ ok: false }, 503);
+    // Setup is privileged: only a caller that already knows the webhook secret
+    // (SHA-256 of "telegram-webhook:<bot token>") may re-register the webhook.
+    const provided = req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+    if (!ready() || !equal(provided, await hook())) return out({ ok: false }, 401);
     try {
       await tg("setWebhook", {
         url: BASE + "/functions/v1/saeed-ai-ui",
@@ -136,6 +140,8 @@ Deno.serve(async (req) => {
           .select("pending_tool")
           .eq("telegram_user_id", user.id)
           .maybeSingle();
+        // Every processor-side pending_tool must be forwarded, otherwise the
+        // tools keyboard promises an action the gateway silently downgrades to chat.
         if (
           [
             "repo",
@@ -145,6 +151,17 @@ Deno.serve(async (req) => {
             "transcribe",
             "remind",
             "tasks",
+            "summarize",
+            "translate",
+            "rewrite",
+            "ideas",
+            "email",
+            "calc",
+            "horoscope",
+            "trivia",
+            "story",
+            "joke",
+            "roast",
           ].includes(p?.pending_tool)
         )
           return forward(update);

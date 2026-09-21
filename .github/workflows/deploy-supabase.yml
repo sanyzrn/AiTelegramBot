@@ -44,13 +44,14 @@ jobs:
           for fn in saeed-ai-v7 saeed-ai-ui saeed-ai-reminders; do
             test -s "supabase/functions/$fn/index.ts"
             test -s "supabase/functions/$fn/deno.json"
-            grep -Fq 'version: "9.0.0"' "supabase/functions/$fn/index.ts"
+            grep -Fq 'APP_VERSION' "supabase/functions/$fn/index.ts"
           done
+          grep -Fq '"9.1.0"' supabase/functions/_shared/version.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq 'X-Saeed-Cron-Secret' supabase/functions/saeed-ai-reminders/index.ts
           grep -Fq 'saeed_ai_authenticate_reminder_cron' supabase/functions/saeed-ai-reminders/index.ts
-          for migration in 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql; do
+          for migration in 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql 20260921040749_saeed_ai_v91_keyboard_page_states.sql; do
             test -s "supabase/migrations/$migration"
           done
           for fn in saeed-ai-v7 saeed-ai-ui; do
@@ -65,6 +66,8 @@ jobs:
           fi
           deno check supabase/functions/_shared/*.ts
           deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          grep -Fq 'tasks_delete_confirm' supabase/functions/saeed-ai-v7/core/ui.ts
+          grep -Fq 'tasks_delete_confirm' supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql
           for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_callback_refresh: true'; do
             grep -Fq "$capability" supabase/functions/saeed-ai-v7/index.ts
           done
@@ -87,18 +90,18 @@ jobs:
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
           done
-      - name: Verify live v9.0.0 and actual capability flags on all three
+      - name: Verify live v9.1.0 and actual capability flags on all three
         shell: bash
         run: |
           set -euo pipefail
           base="https://${PROJECT_REF}.supabase.co/functions/v1"
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             payload="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 "$base/$fn?health=$(date +%s)")"
-            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.0.0"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
+            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.1.0"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
             case "$fn" in
               saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true' >/dev/null ;;
               saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true' >/dev/null ;;
               saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v9_market_weather == true' >/dev/null ;;
             esac
-            echo "PASS: live $fn v9.0.0 and capabilities"
+            echo "PASS: live $fn v9.1.0 and capabilities"
           done

@@ -1,6 +1,14 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 9.0.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version.
+**Current application release: 9.1.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version. The release version lives in `supabase/functions/_shared/version.ts` and every health endpoint reports it.
+
+## v9.1.0 fixes and hardening
+
+- **Tasks bulk delete works again.** The confirmation button was never forwarded by the gateway (missing from `MENUS`) and `tasks_delete_confirm` was rejected by the `keyboard_page` CHECK constraint; both are fixed (migration `20260921040749`) and guarded by `tests/gateway-routing.test.mjs`.
+- **Tools keyboard buttons actually route.** Selecting خلاصه، ترجمه، بازنویسی، ایده‌پردازی، ایمیل، ماشین‌حساب or a fun tool now forwards the next message to the processor instead of silently downgrading it to chat.
+- **`?setup` requires the derived webhook secret.** Re-registering the webhook now needs the `X-Telegram-Bot-Api-Secret-Token` header equal to `SHA-256("telegram-webhook:" + bot token)`; unauthorized calls get `401`.
+- **Transient typing-indicator failures no longer fail or refund a valid request**, failed refunds are logged, and the model connectivity probe no longer misreports thinking models as broken.
+- **History turns with repeated roles are merged** for strict OpenAI-compatible providers, and swept reminder cleanup now also removes reminders that exhausted their delivery attempts.
 
 ## Architecture: modular and checked
 
@@ -16,11 +24,11 @@ The legacy per-function `deno.json` configs still use `strict: false`; **this is
 
 ## Production release contract
 
-`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
+`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9.1.0 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
 
 The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Both Telegram Edge Functions authenticate the `X-Telegram-Bot-Api-Secret-Token`; cron separately authenticates `X-Saeed-Cron-Secret` using a service-role-only RPC.
 
-**Schema migrations are not automatically applied** by this Edge Functions workflow. The v8 setup includes `20260920090000_saeed_ai_reminders_tasks.sql`, `20260920205000_saeed_ai_v8_preference_states.sql` and `20260920205100_saeed_ai_v8_vault_cron_auth.sql`. The cron migration keeps its secret in Supabase Vault and configures `saeed-ai-reminders-every-minute`.
+**Schema migrations are not automatically applied** by this Edge Functions workflow. Apply `supabase/migrations/*.sql` (latest: `20260921040749_saeed_ai_v91_keyboard_page_states.sql`, which extends the `keyboard_page` CHECK constraint) before or right after deploying. The v8 setup includes `20260920090000_saeed_ai_reminders_tasks.sql`, `20260920205000_saeed_ai_v8_preference_states.sql` and `20260920205100_saeed_ai_v8_vault_cron_auth.sql`. The cron migration keeps its secret in Supabase Vault and configures `saeed-ai-reminders-every-minute`.
 
 ## v9 functionality currently implemented
 
@@ -33,11 +41,11 @@ The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Bo
 - **Morning briefing:** opt-in, disabled by default, covering tasks, upcoming reminders, expenses and independently sourced weather/market sections. Weather currently uses Tehran. Rates that are stale or lack reliable timestamp/source are withheld, not invented.
 - **UI:** Telegram collapsible reply keyboard, home message «بفرما حاجی چی تو ذهنته 😁» and configurable tone and answer length.
 
-Health version `9.0.0` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
+Health version `9.1.0` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
 
 ## Verification and remaining feature limits
 
-Run `deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts`, the equivalent check for `saeed-ai-ui`, `deno check supabase/functions/_shared/*.ts`, and `node --experimental-strip-types --test tests/*.test.mjs`; require a green canonical production deployment. Test a real voice, scheduled reminder delivery, shopping tick/undo and opt-in briefing in Telegram before claiming those scenarios are end-to-end verified. Rich all-in-one sentence parsing, user-selected briefing cities, shared shopping lists, calendar/receipt integrations and a dedicated daily dashboard are not implemented yet.
+Run `deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts`, the equivalent check for `saeed-ai-ui`, `deno check supabase/functions/_shared/*.ts`, and `node --experimental-strip-types --test tests/*.test.mjs`; require a green canonical production deployment. `tests/gateway-routing.test.mjs` additionally proves every reply-keyboard button is gateway-routable, every `pending_tool` is forwarded, the delete-confirmation page is accepted by the schema and the webhook `?setup` call is authenticated. Test a real voice, scheduled reminder delivery, shopping tick/undo and opt-in briefing in Telegram before claiming those scenarios are end-to-end verified. Rich all-in-one sentence parsing, user-selected briefing cities, shared shopping lists, calendar/receipt integrations and a dedicated daily dashboard are not implemented yet.
 
 ## Recovery
 
