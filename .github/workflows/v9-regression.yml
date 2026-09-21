@@ -32,21 +32,32 @@ jobs:
           node-version: '22'
       - name: Execute pure calculation, recurrence, ownership and intent tests
         run: node --experimental-strip-types --test tests/*.test.mjs
-      - name: Prevent task replacement and verify both monolithic and modular layouts
+      - name: Protect tasks, deletion confirmation and extracted module boundaries
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           index=Path('supabase/functions/saeed-ai-v7/index.ts').read_text()
-          life=Path('supabase/functions/saeed-ai-v7/core/life.ts')
-          source=life.read_text() if life.exists() else index
-          part=source.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
+          core=Path('supabase/functions/saeed-ai-v7/core')
+          life=(core/'life.ts').read_text()
+          shared=Path('supabase/functions/_shared/life.ts').read_text()
+          ui=(core/'ui.ts').read_text()
+          part=life.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
           assert '.delete()' not in part, 'saveTasks must append rather than delete'
-          assert 'telegram_update_id: update' in source, 'reminders must deduplicate updates'
-          assert 'handleLifeCallback' in index, 'private callbacks must be wired'
-          assert 'calculateExact' in index, 'exact calculator must be wired'
-          print('PASS: non-destructive task creation and v9 integration guards')
+          assert 'renderTasks({ db, tg, send }, id, chat)' in part, 'new task confirmation must have inline controls'
+          assert 'برای تیک زدن بنویس' not in life, 'do not instruct numeric completion instead of inline buttons'
+          assert 'telegram_update_id: update' in life, 'reminders must deduplicate updates'
+          assert 'handleLifeCallback' in index and 'calculateExact' in index
+          assert 'task:undo:' in shared and 'editMessageText' in shared, 'task callbacks must refresh the original list'
+          prompt=ui.split('if (text === "🗑 پاک‌کردن تسک‌ها")',1)[1].split('if (text === "✅ تأیید حذف همه تسک‌ها")',1)[0]
+          confirm=ui.split('if (text === "✅ تأیید حذف همه تسک‌ها")',1)[1].split('if (text === "📋 پروفایل من")',1)[0]
+          assert '.delete()' not in prompt and 'tasks_delete_confirm' in prompt
+          assert 'p.keyboard_page !== "tasks_delete_confirm"' in confirm and '.delete()' in confirm
+          assert '✅ تأیید حذف همه تسک‌ها' in ui and '❌ انصراف' in ui
+          for name in ('state.ts','ui.ts','life.ts','model.ts'):
+            assert 'unzipSync' not in (core/name).read_text(), f'Unrelated archive dependency in {name}'
+          print('PASS: owner-scoped inline tasks, explicit bulk-delete confirmation and clean touched-module imports')
           PY
       - name: Never allow automatic writes to main from legacy patch workflows
         shell: bash
