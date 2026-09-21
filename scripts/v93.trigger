@@ -1,1 +1,1 @@
-Run one-time release/v9.3.0-reviewed-20260921 importer. Production main remains unchanged until verified CI passes.
+Run checked v9.3 source import against the actual deployed v9.2 tree; ignore ZIP-only reminders deno.lock, never add it to GitHub.
