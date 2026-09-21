@@ -1,8 +1,5 @@
 /** Saeed AI saeed-ai-ui output module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
 import { send, tg } from "./transport.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export const esc = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

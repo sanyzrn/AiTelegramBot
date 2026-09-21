@@ -5,7 +5,7 @@ import { admin, db } from "./state.ts";
 import { send, tg } from "./transport.ts";
 import { cfg, pref, save } from "./admin.ts";
 import { ai } from "./model.ts";
-import { LANG, SIZES, TONES } from "./ui.ts";
+import { LANG, SIZES, TONES } from "./menu.ts";
 
 let lastSweep = 0;
 

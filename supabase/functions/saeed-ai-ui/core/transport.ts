@@ -1,8 +1,5 @@
 /** Saeed AI saeed-ai-ui transport module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
 import { BASE, LEGACY, TOKEN, admin, db } from "./state.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 let HOOK = "";
 
