@@ -1,0 +1,88 @@
+name: One-time verified v9.3 release import
+on:
+  push:
+    branches: ['release/v9.3.0-reviewed-20260921']
+    paths: ['scripts/v93.trigger']
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.ref == 'refs/heads/release/v9.3.0-reviewed-20260921'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore only reviewed v9.3 changes with fixed baseline and exact file hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/release/v9.3.0-reviewed-20260921'
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = '412493b614185ea348a34f34030b13ccf7352e9b' || { echo 'Main moved; review again'; exit 1; }
+          git merge-base --is-ancestor 412493b614185ea348a34f34030b13ccf7352e9b HEAD
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, re, subprocess
+          from pathlib import Path
+          parts=[Path(f'scripts/v93.part{i}').read_text('ascii') for i in range(6)]
+          assert [len(p) for p in parts]==[5800,5800,5800,5800,5800,2528]
+          compressed=base64.b64decode(''.join(parts),validate=True)
+          assert hashlib.sha256(compressed).hexdigest()=='604da59faee169d2cdf8ae4a37ba3fb7b35b0b5518eda869cf1b2d4b536dc5f0'
+          raw=lzma.decompress(compressed)
+          assert hashlib.sha256(raw).hexdigest()=='ba631cbe86f6de578f3e39e16f187860ed5909c7e47022c60abb25d40b69efb7'
+          m=json.loads(raw)
+          assert m['base']=='412493b614185ea348a34f34030b13ccf7352e9b'
+          expected=['.github/workflows/deploy-supabase.yml','.github/workflows/shared-typecheck.yml','README.md','supabase/config.toml','supabase/functions/_shared/briefing-sources.ts','supabase/functions/_shared/intent-model.ts','supabase/functions/_shared/life.ts','supabase/functions/_shared/morning-voice.ts','supabase/functions/_shared/tool-intent.ts','supabase/functions/_shared/version.ts','supabase/functions/saeed-ai-reminders/index.ts','supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md','supabase/functions/saeed-ai-v7/index.ts','supabase/migrations/20260921071728_saeed_ai_v93_briefing_city.sql','tests/v93.test.mjs']
+          assert sorted(m['changed'])==expected
+          added={'supabase/functions/_shared/morning-voice.ts','supabase/migrations/20260921071728_saeed_ai_v93_briefing_city.sql','tests/v93.test.mjs'}
+          assert set(m['added'])==added and len(m['baseline'])==64 and not added.intersection(m['baseline'])
+          def hash_blob(path):
+            return subprocess.check_output(['git','hash-object',path],text=True).strip()
+          for path,sha in m['baseline'].items():
+            assert Path(path).is_file() and hash_blob(path)==sha, f'Existing file diverged: {path}'
+          patch=m['patch']
+          assert re.findall(r'(?m)^--- a/(.+)$',patch)==[p for p in expected if p not in added]
+          assert re.findall(r'(?m)^\+\+\+ b/(.+)$',patch)==[p for p in expected if p not in added]
+          assert not re.search(r'(?m)^(?:diff --git|rename |Binary files)',patch)
+          Path('/tmp/v93-verified.patch').write_text(patch)
+          subprocess.run(['git','apply','--check','/tmp/v93-verified.patch'],check=True)
+          subprocess.run(['git','apply','/tmp/v93-verified.patch'],check=True)
+          for path,content in m['added'].items():
+            p=Path(path)
+            assert not p.exists() and not p.is_symlink()
+            p.parent.mkdir(parents=True,exist_ok=True)
+            p.write_text(content)
+          for path,sha in m['changed'].items():
+            assert hash_blob(path)==sha, f'Unexpected result: {path}'
+            subprocess.run(['git','add','--',path],check=True)
+          assert subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()==expected
+          print('PASS: exact v9.2 baseline and exactly 15 reviewed v9.3 files verified')
+          PY
+      - name: Deno typecheck all entrypoints and modules; run all regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts
+          deno check --config supabase/functions/saeed-ai-ui/deno.json supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-ui/core/*.ts
+          deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          node --experimental-strip-types --test tests/*.test.mjs
+          grep -Fq '"9.3.0"' supabase/functions/_shared/version.ts
+          grep -Fq '20260921071728_saeed_ai_v93_briefing_city.sql' .github/workflows/deploy-supabase.yml
+          grep -Fq 'v93_city_voice: true' supabase/functions/saeed-ai-reminders/index.ts
+          git diff --cached --check
+      - name: Commit only validated source files on release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --cached --name-only | wc -l)" -eq 15
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: reviewed v9.3 city-aware morning briefing and safety guards'
+          git push origin HEAD:refs/heads/release/v9.3.0-reviewed-20260921
