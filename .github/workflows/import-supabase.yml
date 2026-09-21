@@ -1,11 +1,8 @@
-name: Import Saeed AI source
+name: Import Saeed AI source (manual recovery only)
 
+# This is a destructive recovery action. Never run on a push to main.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/import-supabase.yml'
 
 permissions:
   contents: write
