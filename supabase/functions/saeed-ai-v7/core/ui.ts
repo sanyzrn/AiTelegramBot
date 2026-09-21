@@ -1,16 +1,8 @@
-/** Saeed AI saeed-ai-v7 ui module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
-import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
-import { calculateExact } from "../../_shared/calculator.ts";
-import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
-import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
-import { unzipSync } from "npm:fflate@0.8.2";
+/** Telegram menus, preferences and guarded navigation. */
 import { admin, db } from "./state.ts";
 import { cfg, configSet, exportMd, flow, save, stats, testModel } from "./admin.ts";
 import { send } from "./transport.ts";
 import { listTasks, profile } from "./life.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export const TONES = {
     friendly: "😊 دوستانه",
@@ -75,6 +67,7 @@ export const MENU = {
     ["🧰 ابزارها", "🏠 خانه"],
   ],
   tasks: [["🗑 پاک‌کردن تسک‌ها"], ["🧰 ابزارها", "🏠 خانه"]],
+  tasks_delete_confirm: [["✅ تأیید حذف همه تسک‌ها"], ["❌ انصراف"]],
   settings: [
     ["🎭 لحن", "📏 اندازه پاسخ"],
     ["🌐 زبان", "🧠 حریم خصوصی"],
@@ -153,6 +146,7 @@ export async function show(id, chat, page) {
         "🔒 گفت‌وگوها فقط حدود ۱۵ دقیقه برای ادامه چت خونده می‌شن و به‌صورت دوره‌ای خودکار از دیتابیس پاک می‌شن؛ پیام‌های خود تلگرام باقی می‌مونن.",
       fun: "🎉 سرگرمی با Saeed AI 🎪\nیه گزینه رو انتخاب کن تا شروع کنیم! 😁",
       tasks: "✅ مدیر تسک‌ها\nکارهاتو بگو تا برات لیست کنم.",
+      tasks_delete_confirm: "⚠️ تمام تسک‌های تو، حتی تسک‌های انجام‌شده، برای همیشه پاک می‌شن. مطمئنی؟ برای حذف، دکمه تأیید رو بزن؛ برای حفظ تسک‌ها انصراف بده.",
       reset: "⚠️ مطمئنی می‌خوای تاریخچه خودت رو پاک کنی؟",
       admin: "🛡 پنل مدیریت Saeed AI 👑",
       users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
@@ -242,9 +236,18 @@ export async function navigate(id, chat, text, p) {
     return true;
   }
   if (text === "🗑 پاک‌کردن تسک‌ها") {
-    await db.from("saeed_ai_tasks").delete().eq("telegram_user_id", id);
-    await save(id, { pending_tool: "chat" });
-    await send(chat, "🗑 لیست تسک‌ها کامل خالی شد. ✨", "tools", id);
+    await show(id, chat, "tasks_delete_confirm");
+    return true;
+  }
+  if (text === "✅ تأیید حذف همه تسک‌ها") {
+    if (p.keyboard_page !== "tasks_delete_confirm") {
+      await send(chat, "⚠️ تأیید منقضی شده. از منوی تسک‌ها دوباره درخواست حذف بده.");
+      return true;
+    }
+    const { error } = await db.from("saeed_ai_tasks").delete().eq("telegram_user_id", id);
+    if (error) throw Error("TASKS_CLEAR");
+    await save(id, { pending_tool: "chat", keyboard_page: "tasks" });
+    await send(chat, "🗑 تسک‌ها با تأیید خودت پاک شدند. ✨", "tasks", id);
     return true;
   }
   if (text === "📋 پروفایل من") {
