@@ -2,7 +2,7 @@ name: One-time verified v9.2.0 source import
 on:
   push:
     branches: ['release/v9.2.0-reviewed-20260921']
-    paths: ['scripts/v92_reviewed.part3']
+    paths: ['scripts/v92_retry.trigger']
 permissions:
   contents: write
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify pinned ZIP diff and restore exactly 14 allowed non-workflow files
+      - name: Verify pinned reviewed delta and restore exactly 14 allowed files
         shell: bash
         run: |
           set -euo pipefail
@@ -31,11 +31,30 @@ jobs:
           python3 - <<'PY'
           import base64,hashlib,lzma,struct,re,subprocess
           from pathlib import Path
-          b64=''.join(Path(f'scripts/v92_reviewed.part{i}').read_text('ascii') for i in range(4))
-          compressed=base64.b64decode(b64,validate=True)
-          assert hashlib.sha256(compressed).hexdigest()=='fe7e9569aff7c1db24e29164c6aafef227c0d6f1e2023e1b20d3d649d598936f','Invalid ZIP delta bundle'
+          parts=[Path(f'scripts/v92_reviewed.part{i}').read_text('ascii') for i in range(4)]
+          assert all(len(x)==4014 for x in parts[:3]), 'Unexpected transport chunks'
+          expected_part3='cef86bf7044866ba7e7c30a4b4b2c947d2e473a1'
+          def blob_sha(s):
+            b=s.encode('ascii')
+            return hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+          if len(parts[3])==4013:
+            alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+            recovered=None
+            for offset in range(4014):
+              for c in alphabet:
+                trial=parts[3][:offset]+c+parts[3][offset:]
+                if blob_sha(trial)==expected_part3:
+                  recovered=trial
+                  break
+              if recovered is not None:break
+            assert recovered is not None, 'Could not recover transport character with pinned SHA-1'
+            parts[3]=recovered
+            print('Recovered precisely one missing base64 transport character; verified original file hash')
+          assert len(parts[3])==4014 and blob_sha(parts[3])==expected_part3
+          compressed=base64.b64decode(''.join(parts),validate=True)
+          assert hashlib.sha256(compressed).hexdigest()=='fe7e9569aff7c1db24e29164c6aafef227c0d6f1e2023e1b20d3d649d598936f','Invalid bundle'
           raw=lzma.decompress(compressed)
-          assert hashlib.sha256(raw).hexdigest()=='ad222afa3052a9c9cf89961c234dc52df136c4ff98eb83c7d3cccd19d9c0d2b5','Unreviewed payload'
+          assert hashlib.sha256(raw).hexdigest()=='ad222afa3052a9c9cf89961c234dc52df136c4ff98eb83c7d3cccd19d9c0d2b5','Unreviewed source'
           assert raw.startswith(b'V92A')
           length=struct.unpack_from('>I',raw,4)[0]
           patch=raw[8:8+length].decode('utf-8')
@@ -83,7 +102,7 @@ jobs:
           for path,sha in expected.items():
             actual=subprocess.check_output(['git','hash-object',path],text=True).strip()
             assert actual==sha,f'{path} does not match reviewed ZIP'
-          print('PASS: exact 14 reviewed non-workflow files verified; main baseline unchanged')
+          print('PASS: exact 14 reviewed files and hashes verified; main baseline unchanged')
           PY
       - name: Deno check every function and run all 35 tests
         shell: bash
@@ -94,7 +113,7 @@ jobs:
           deno check supabase/functions/_shared/*.ts
           deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
           node --experimental-strip-types --test tests/*.test.mjs
-      - name: Commit only 14 source files on release branch
+      - name: Commit only 14 reviewed source files on release branch
         shell: bash
         run: |
           set -euo pipefail
