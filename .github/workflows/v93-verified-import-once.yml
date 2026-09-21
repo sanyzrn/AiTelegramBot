@@ -94,12 +94,15 @@ jobs:
           PY
           git add -- supabase/functions/_shared/morning-voice.ts
           git diff --cached --check
-      - name: Commit only validated source files on release branch
+      - name: Commit checked source only; workflows will be updated via authorized connector
         shell: bash
         run: |
           set -euo pipefail
           test "$(git diff --cached --name-only | wc -l)" -eq 15
+          git restore --staged --worktree -- .github/workflows/deploy-supabase.yml .github/workflows/shared-typecheck.yml
+          test "$(git diff --cached --name-only | wc -l)" -eq 13
+          git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: reviewed v9.3 city-aware morning briefing and safety guards'
+          git commit -m 'feat: reviewed v9.3 city-aware briefing source and safety guards'
           git push origin HEAD:refs/heads/release/v9.3.0-reviewed-20260921
