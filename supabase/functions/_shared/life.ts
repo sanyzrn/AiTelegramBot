@@ -60,10 +60,12 @@ export async function renderTasks(c: LifeContext, id: number, chat: number, mess
 }
 
 /** City commands for the morning briefing. Question-y phrases never mutate anything. Returns true when the message was recognized. */
-const CITY_NAME_BAD = /[?؟!،,]|چیه|چی\s*هست|کجاست|کدوم|کدام|چطور|چقدر|چند|پاک|حذف|نمی|بگو|باشه|لطف/u;
-const cityClear = /^(?:\/city\s+(?:clear|reset|off|remove|delete)|شهر(?:\s+صبح[‌\s-]*نامه)?(?:\s+من)?\s*(?:رو\s*)?(?:پاک|حذف)\s+کن)$/iu;
+const CITY_NAME_BAD = /[?؟!،,]|چیه|چی\s*هست|کجاست|کدوم|کدام|چطور|چقدر|چند|پاک|حذف|نمی|بگو|باشه|لطف|بذار|بگذار|بزار|تنظیم|ثبت/u;
+// Clearing accepts the attached «شهرم» form exactly like setting and showing do.
+const cityClear = /^(?:\/city\s+(?:clear|reset|off|remove|delete)|شهر(?:م|\s+صبح[‌\s-]*نامه(?:\s+من)?|\s+من)?\s*(?:رو\s*)?(?:پاک|حذف)\s+کن)$/iu;
 const cityShow = /^(?:\/city|شهر\s*من|شهرم)(?:\s*(?:چیه|چی\s*هست)\s*[?؟]?|\s*[?؟])?$/iu;
-const citySet = /^(?:\/city\s+(.+?)|شهر(?:\s+صبح[‌\s-]*نامه)?(?:\s+من)?\s*[:：]\s*(.+?)|شهر\s+صبح[‌\s-]*نامه\s+(.+?)|(?:شهر\s*من|شهرم)\s+(.+?))(?:\s+(?:رو|را))?(?:\s+(?:بذار|بگذار|بزار|ثبت\s*کن|تنظیم\s*کن))?\s*$/iu;
+// The verb-first colloquial order («شهرم رو بذار رشت») must capture the city, not the verbs.
+const citySet = /^(?:\/city\s+(.+?)|شهر(?:\s+صبح[‌\s-]*نامه)?(?:\s+من)?\s*[:：]\s*(.+?)|شهر\s+صبح[‌\s-]*نامه\s+(.+?)|(?:شهر\s*من|شهرم)\s+(?:رو\s+|را\s+)?(?:بذار|بگذار|بزار|ثبت\s*کن|تنظیم\s*کن)\s+(.+?)|(?:شهر\s*من|شهرم)\s+(.+?))(?:\s+(?:رو|را))?(?:\s+(?:بذار|بگذار|بزار|ثبت\s*کن|تنظیم\s*کن))?\s*$/iu;
 
 export async function handleCityMessage(c: LifeContext, id: number, chat: number, msg: string): Promise<boolean> {
   if (cityClear.test(msg)) {
@@ -82,7 +84,7 @@ export async function handleCityMessage(c: LifeContext, id: number, chat: number
   }
   const m = citySet.exec(msg);
   if (!m) return false;
-  const name = [m[1], m[2], m[3], m[4]].find((x) => x?.trim())?.trim().replace(/\s+/g, " ").replace(/^[«'"“]+|[»'"”]+$/g, "") || "";
+  const name = [m[1], m[2], m[3], m[4], m[5]].find((x) => x?.trim())?.trim().replace(/\s+/g, " ").replace(/^[«'"“]+|[»'"”]+$/g, "").replace(/^(?:رو|را)\s+/u, "") || "";
   if (name.length < 2 || name.length > 60 || !/[\p{L}\p{N}]/u.test(name) || CITY_NAME_BAD.test(name)) {
     await c.send(chat, "🤔 اسم شهر رو واضح بنویس؛ مثلاً «شهر من اصفهان» یا «/city Isfahan». سؤال دیگه‌ای هم داری بپرس!");
     return true;

@@ -46,7 +46,7 @@ jobs:
             test -s "supabase/functions/$fn/deno.json"
             grep -Fq 'APP_VERSION' "supabase/functions/$fn/index.ts"
           done
-          grep -Fq '"9.3.0"' supabase/functions/_shared/version.ts
+          grep -Fq '"9.3.1"' supabase/functions/_shared/version.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq 'X-Saeed-Cron-Secret' supabase/functions/saeed-ai-reminders/index.ts
@@ -90,18 +90,18 @@ jobs:
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
           done
-      - name: Verify live v9.3.0 and actual capability flags on all three
+      - name: Verify live v9.3.1 and actual capability flags on all three
         shell: bash
         run: |
           set -euo pipefail
           base="https://${PROJECT_REF}.supabase.co/functions/v1"
           for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
             payload="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 "$base/$fn?health=$(date +%s)")"
-            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.3.0"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
+            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.3.1"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
             case "$fn" in
               saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true' >/dev/null ;;
               saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true' >/dev/null ;;
               saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v9_market_weather == true and .v93_city_voice == true' >/dev/null ;;
             esac
-            echo "PASS: live $fn v9.3.0 and capabilities"
+            echo "PASS: live $fn v9.3.1 and capabilities"
           done

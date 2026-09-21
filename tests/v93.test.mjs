@@ -235,6 +235,32 @@ test('show and clear city flows reply and write the null patch', async () => {
   assert.match(cleared.sent[0], /پاک شد/);
 });
 
+test('colloquial city phrasings clear and set without swallowing verbs', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = urlFetcher([['geocoding-api.open-meteo.com', { results: [{ name: 'رشت', latitude: 37.2808, longitude: 49.5832, admin1: 'استان گیلان', country: 'ایران' }] }], ['api.open-meteo.com', weatherJson]]);
+  try {
+    // «شهرم رو پاک کن» must clear, not be mistaken for a city name.
+    const cleared = mkCtx({ city_label: 'رشت، ایران', enabled: true });
+    const handled = await handleLifeMessage(cleared.c, 1, 1, 'شهرم رو پاک کن', 20);
+    assert.equal(handled, true);
+    assert.equal(cleared.state.updated[0].city, null);
+    assert.match(cleared.sent[0], /پاک شد/);
+    // Verb-first word order must capture the actual city name.
+    const set = mkCtx(null);
+    await handleLifeMessage(set.c, 1, 1, 'شهرم رو بذار رشت', 21);
+    assert.equal(set.state.inserted.length, 1);
+    assert.equal(set.state.inserted[0].city, 'رشت');
+    await handleLifeMessage(set.c, 1, 1, 'شهر من رو بذار رشت', 22);
+    assert.equal(set.state.inserted[1].city, 'رشت');
+    await handleLifeMessage(set.c, 1, 1, 'شهرم رو رشت بذار', 23);
+    assert.equal(set.state.inserted[2].city, 'رشت');
+    // A genuine city starting with «را» must not be corrupted by the رو/را strip.
+    const raw = mkCtx(null);
+    await handleLifeMessage(raw.c, 1, 1, 'شهر من راور', 24);
+    assert.equal(raw.state.inserted[0].city, 'راور');
+  } finally { globalThis.fetch = realFetch; }
+});
+
 test('the cron briefing is city-aware, friendly and lease-safe', () => {
   const t = read('saeed-ai-reminders/index.ts');
   assert.match(t, /p_limit: 6/, 'batch of six preserves headroom for both AI and Telegram timeouts');
@@ -250,12 +276,12 @@ test('the cron briefing is city-aware, friendly and lease-safe', () => {
   assert.match(mv, /const signal = AbortSignal\.timeout\(7000\)/, 'all provider attempts must share a single 7-second budget');
 });
 
-test('migration and workflows carry the v9.3.0 city feature', () => {
+test('migration and workflows carry the v9.3 city feature', () => {
   const sql = readFileSync(resolve('supabase/migrations/20260921120000_saeed_ai_v93_briefing_city.sql'), 'utf8');
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lat DOUBLE PRECISION/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lon DOUBLE PRECISION/);
   assert.match(sql, /saeed_ai_briefing_city_pair_chk/);
-  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "9\.3\.0"/);
+  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "9\.3\.1"/);
   assert.match(readFileSync(resolve('.github/workflows/shared-typecheck.yml'), 'utf8'), /morning-voice\.ts/);
 });
 

@@ -1,6 +1,11 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 9.3.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version. The release version lives in `supabase/functions/_shared/version.ts` and every health endpoint reports it.
+**Current application release: 9.3.1.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version. The release version lives in `supabase/functions/_shared/version.ts` and every health endpoint reports it.
+
+## v9.3.1 colloquial city phrasing
+
+- «شهرم رو پاک کن» now clears the city instead of being misread as a city name, and verb-first forms such as «شهرم رو بذار رشت» or «شهر من رو بذار رشت» capture the actual city; a genuine city starting with «را» (like راور) is untouched.
+- The migrations directory intentionally covers the Saeed AI era only. The pre-existing base tables (`telegram_bot_preferences`, `telegram_bot_user_access`, `telegram_bot_config`, `telegram_bot_admin_flow`, `telegram_chat_messages`, `telegram_bot_daily_usage`, `saeed_ai_metrics`, `saeed_ai_retry`, `saeed_ai_voice_pending`) and the quota RPCs (`saeed_ai_reserve_daily` / `saeed_ai_refund_daily`) live in the production project and are not reproduced here, so a brand-new Supabase project cannot be bootstrapped from `supabase/migrations` alone.
 
 ## v9.3.0 city-aware morning briefing
 
@@ -39,7 +44,7 @@ The legacy per-function `deno.json` configs still use `strict: false`; **this is
 
 ## Production release contract
 
-`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9.3.0 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
+`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9.3.1 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
 
 The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Both Telegram Edge Functions authenticate the `X-Telegram-Bot-Api-Secret-Token`; cron separately authenticates `X-Saeed-Cron-Secret` using a service-role-only RPC.
 
@@ -56,7 +61,7 @@ The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Bo
 - **Morning briefing:** opt-in, disabled by default, covering tasks, upcoming reminders, expenses and independently sourced weather/market sections. Weather defaults to Tehran until the user selects a city. Rates that are stale or lack reliable timestamp/source are withheld, not invented.
 - **UI:** Telegram collapsible reply keyboard, home message «بفرما حاجی چی تو ذهنته 😁» and configurable tone and answer length.
 
-Health version `9.3.0` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
+Health version `9.3.1` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
 
 ## Verification and remaining feature limits
 

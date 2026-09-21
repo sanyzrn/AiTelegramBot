@@ -3,6 +3,7 @@
 # Tone release 7.8: playful, warm witty style and original seventh-century-inspired mystic style.
 # Settings UX: confirm a saved tone, answer length, or language once, then return to Settings.
 # v9.3.0: user-selectable briefing city with geocoding, energetic AI morning voice, weather-based clothing tips.
+# v9.3.1: colloquial city phrasing («شهرم رو بذار رشت», «شهرم رو پاک کن») and base-schema documentation.
 # Deploy three functions after applying supabase/migrations including 20260921040749_saeed_ai_v91_keyboard_page_states.sql.
 [functions.saeed-ai-ui]
 verify_jwt = false
