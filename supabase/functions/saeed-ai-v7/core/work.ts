@@ -24,7 +24,9 @@ async function reserve(id, update) {
 }
 
 async function refund(update) {
-  await db.rpc("saeed_ai_refund_daily", { p_update_id: update });
+  // A failed refund must not mask the original failure, but it must be visible.
+  const { error } = await db.rpc("saeed_ai_refund_daily", { p_update_id: update });
+  if (error) console.error("REFUND", error.code);
 }
 
 async function metric(update, id, s, status, usage: { input?: number | null; output?: number | null } = {}, reason = "") {
@@ -182,7 +184,10 @@ async function work(
     chat = m.chat.id;
   let answered = false;
   try {
-    await tg("sendChatAction", { chat_id: chat, action: "typing" });
+    // A transient typing-indicator failure must never fail the whole request.
+    try {
+      await tg("sendChatAction", { chat_id: chat, action: "typing" });
+    } catch {}
     let input = prompt || "محتوا را بررسی کن.",
       audit = null;
     if (tool === "repo") {

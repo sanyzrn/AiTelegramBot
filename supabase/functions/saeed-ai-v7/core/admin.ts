@@ -127,7 +127,10 @@ export async function testModel(provider, model) {
             },
             body: JSON.stringify({
               contents: [{ parts: [{ text: "Reply OK" }] }],
-              generationConfig: { maxOutputTokens: 32 },
+              // Thinking models can spend a tiny budget on hidden thoughts and
+              // return no visible text, which looked like a broken model. 256
+              // tokens keep the connectivity probe reliable.
+              generationConfig: { maxOutputTokens: 256 },
             }),
             signal: AbortSignal.timeout(18000),
           },
@@ -141,7 +144,7 @@ export async function testModel(provider, model) {
           body: JSON.stringify({
             model,
             messages: [{ role: "user", content: "Reply OK" }],
-            max_tokens: 32,
+            max_tokens: 64,
           }),
           signal: AbortSignal.timeout(18000),
         });

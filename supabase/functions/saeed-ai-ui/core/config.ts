@@ -57,6 +57,7 @@ export const MENUS = new Set([
   "📧 ایمیل نگارش",
   "✅ تسک‌ها",
   "🗑 پاک‌کردن تسک‌ها",
+  "✅ تأیید حذف همه تسک‌ها",
   "📋 پروفایل من",
   "🎉 سرگرمی",
   "🔮 طالع",
@@ -100,8 +101,20 @@ export async function readHistory(id, chat, row) {
       .order("id", { ascending: false })
       .limit(12);
   if (h.error) throw Error("HISTORY");
-  return (h.data || []).reverse().map((x) => ({
-    role: x.role === "model" ? "model" : "user",
-    parts: [{ text: x.body.slice(0, 3000) }],
-  }));
+  const turns = (h.data || [])
+    .reverse()
+    .map((x) => ({
+      role: x.role === "model" ? "model" : "user",
+      parts: [{ text: x.body.slice(0, 3000) }],
+    }));
+  // Merge consecutive same-role turns: failed answers delete the model row and
+  // strict OpenAI-compatible providers reject non-alternating roles.
+  const merged = [];
+  for (const turn of turns) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === turn.role) {
+      last.parts[0].text += "\n" + turn.parts[0].text;
+    } else merged.push(turn);
+  }
+  return merged;
 }

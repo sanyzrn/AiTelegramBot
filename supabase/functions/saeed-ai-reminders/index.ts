@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { APP_VERSION } from "../_shared/version.ts";
 import { nextOccurrence, type RepeatRule } from "../_shared/repeat.ts";
 import { briefingExternalSections } from "../_shared/briefing-sources.ts";
 const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
@@ -94,7 +95,7 @@ async function dispatchBriefings() {
 Deno.serve(async (request) => {
   const url = new URL(request.url);
   if (request.method === "GET" && url.searchParams.has("health"))
-    return Response.json({ version: "9.0.0", configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true, v9_market_weather: true }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ version: APP_VERSION, configured: configured(), scheduled_reminders: true, v9_recurring: true, v9_briefings: true, v9_market_weather: true }, { headers: { "Cache-Control": "no-store" } });
   if (request.method !== "POST") return new Response("Not found", { status: 404 });
   if (!configured()) return new Response("Unavailable", { status: 503 });
   const candidate = request.headers.get("X-Saeed-Cron-Secret") || "";
