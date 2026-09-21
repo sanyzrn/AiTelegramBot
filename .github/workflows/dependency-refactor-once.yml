@@ -20,69 +20,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Move pure presentation dependencies and prune unreferenced imports
+      - name: Run previous audited refactor and normalize extracted file
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = 'refs/heads/refactor/dependency-cleanup-20260921'
+          test "$GITHUB_REF" = 'refs/heads/refactor/dependency-cleanup-20260921'
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          root=Path('supabase/functions')
-          core=root/'saeed-ai-v7'/'core'
-          ui=core/'ui.ts'
-          src=ui.read_text(encoding='utf-8')
-          begin='export const TONES = {'
-          end='export async function show('
-          assert src.count(begin)==src.count(end)==1
-          start=src.index(begin); stop=src.index(end)
-          pure=src[start:stop]
-          assert all(x in pure for x in ('export const MENU = {','export function toneGuide','export function rows','export const keyboard'))
-          assert not re.search(r'\b(?:Deno|fetch|db|send|tg|await)\b',pure), 'Pure menu must not depend on I/O'
-          menu=core/'menu.ts'
-          assert not menu.exists(), 'Menu already extracted; stop rather than overwrite'
-          menu.write_text('/** Pure Telegram menu definitions and formatting; no database or network imports. */\n'+pure,encoding='utf-8')
-          replacement='import { TONES, SIZES, LANG, TOOLS } from "./menu.ts";\nexport { TONES, SIZES, LANG, TOOLS, MENU, rows, keyboard, toneGuide } from "./menu.ts";\n\n'
-          ui.write_text(src[:start]+replacement+src[stop:],encoding='utf-8')
-          tr=core/'transport.ts'
-          s=tr.read_text(encoding='utf-8')
-          old='import { keyboard } from "./ui.ts";'
-          assert s.count(old)==1
-          tr.write_text(s.replace(old,'import { keyboard } from "./menu.ts";'),encoding='utf-8')
-          life=core/'life.ts'
-          s=life.read_text(encoding='utf-8')
-          old='import { LANG, SIZES, TONES } from "./ui.ts";'
-          assert s.count(old)==1
-          life.write_text(s.replace(old,'import { LANG, SIZES, TONES } from "./menu.ts";'),encoding='utf-8')
-          named=re.compile(r'^import\s*\{([^{}]+)\}\s*from\s*(["\'][^"\']+["\']);\s*$')
-          changed=[]
-          for directory in (root/'saeed-ai-v7',root/'saeed-ai-ui'):
-            for path in [directory/'index.ts',*sorted((directory/'core').glob('*.ts'))]:
-              before=path.read_text(encoding='utf-8')
-              lines=before.splitlines(keepends=True)
-              implementation=''.join(line for line in lines if not line.lstrip().startswith('import '))
-              out=[]
-              for line in lines:
-                m=named.match(line.strip())
-                if not m:
-                  out.append(line);continue
-                old=[item.strip() for item in m.group(1).split(',')]
-                keep=[]
-                for item in old:
-                  alias=item.replace('type ','',1).split(' as ')[-1].strip()
-                  if re.search(r'\b'+re.escape(alias)+r'\b',implementation): keep.append(item)
-                if keep: out.append('import { '+', '.join(keep)+' } from '+m.group(2)+';\n')
-              result=''.join(out)
-              declaration='declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };\n'
-              if declaration in result and not re.search(r'\bEdgeRuntime\b',result.replace(declaration,'')):
-                result=result.replace(declaration,'')
-              if result!=before:
-                path.write_text(result,encoding='utf-8')
-                changed.append(str(path))
-          assert len(changed)>=10, f'Expected substantial copied-header cleanup: {changed}'
-          print('Updated modules:',*changed,sep='\n - ')
+          import subprocess,textwrap
+          original=subprocess.check_output(['git','show','58e979ec62be96a0a06f3b809e186f07402f862e:.github/workflows/dependency-refactor-once.yml'],text=True)
+          fragments=original.split("          python3 - <<'PY'\n")
+          assert len(fragments)==3, 'Original audited steps changed'
+          transform=textwrap.dedent(fragments[1].split('\n          PY',1)[0])
+          exec(compile(transform,'audited-branch-transform','exec'),{'__name__':'__main__'})
+          menu=Path('supabase/functions/saeed-ai-v7/core/menu.ts')
+          menu.write_text(menu.read_text(encoding='utf-8').rstrip()+'\n',encoding='utf-8')
           PY
-      - name: Verify type safety, behavior and dependency graph BEFORE committing
+      - name: Verify all functions, regressions and acyclic dependency graph
         shell: bash
         run: |
           set -euo pipefail
@@ -92,44 +46,22 @@ jobs:
           deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
           node --experimental-strip-types --test tests/*.test.mjs
           python3 - <<'PY'
-          from pathlib import Path
-          import re
-          base=Path('supabase/functions')
-          nodes={p.resolve():p for fn in ('saeed-ai-v7','saeed-ai-ui') for p in (base/fn/'core').glob('*.ts')}
-          edges={key:set() for key in nodes}
-          named=re.compile(r'^import\s*\{([^{}]+)\}\s*from\s*["\']([^"\']+)["\'];',re.M)
-          for resolved,p in nodes.items():
-            src=p.read_text(); impl=named.sub('',src)
-            for match in named.finditer(src):
-              module=match.group(2)
-              if module.startswith('.'):
-                target=(p.parent/module).resolve()
-                if target in nodes:edges[resolved].add(target)
-              for imp in match.group(1).split(','):
-                alias=imp.strip().replace('type ','',1).split(' as ')[-1].strip()
-                assert re.search(r'\b'+re.escape(alias)+r'\b',impl),f'Unused import {alias} in {p}'
-          seen=set(); active=set()
-          def visit(p):
-            assert p not in active, 'Cyclic module dependency: '+str(nodes[p])
-            if p in seen:return
-            active.add(p)
-            for child in edges[p]:visit(child)
-            active.remove(p); seen.add(p)
-          for p in nodes:visit(p)
-          for filename in ('transport.ts','life.ts'):
-            assert 'from "./ui.ts"' not in (base/'saeed-ai-v7'/'core'/filename).read_text()
-          assert not re.search(r'^import\b', (base/'saeed-ai-v7'/'core'/'menu.ts').read_text(),re.M)
-          print(f'PASS: {len(nodes)} core modules with no cycles or unused named imports')
+          import subprocess,textwrap
+          original=subprocess.check_output(['git','show','58e979ec62be96a0a06f3b809e186f07402f862e:.github/workflows/dependency-refactor-once.yml'],text=True)
+          fragments=original.split("          python3 - <<'PY'\n")
+          assert len(fragments)==3
+          graph=textwrap.dedent(fragments[2].split('\n          PY',1)[0])
+          exec(compile(graph,'audited-dependency-check','exec'),{'__name__':'__main__'})
           PY
-      - name: Commit verified refactor to THIS branch only
+      - name: Commit only to isolated refactor branch
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = 'refs/heads/refactor/dependency-cleanup-20260921'
+          test "$GITHUB_REF" = 'refs/heads/refactor/dependency-cleanup-20260921'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add supabase/functions/saeed-ai-v7/ supabase/functions/saeed-ai-ui/
           git diff --cached --check
-          git diff --cached --quiet && { echo 'No files changed'; exit 1; }
-          git commit -m 'refactor: extract pure menu and remove unused imports across both edge functions'
+          git diff --cached --quiet && { echo 'Nothing to commit'; exit 1; }
+          git commit -m 'refactor: extract pure menu and prune legacy imports in both functions'
           git push origin HEAD:refs/heads/refactor/dependency-cleanup-20260921
