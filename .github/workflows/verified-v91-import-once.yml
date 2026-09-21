@@ -1,94 +1,26 @@
-name: One-time verified import of user-provided v9.1.0 ZIP
+name: Inspect v9.1.0 uploaded archive (review branch only)
 on:
   push:
     branches: ['release/v9.1.0-reviewed-20260921']
-    paths: ['scripts/v91_payload.part3']
 permissions:
-  contents: write
+  contents: read
 jobs:
-  verified-import:
+  inspect:
     if: github.ref == 'refs/heads/release/v9.1.0-reviewed-20260921'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Confirm base commit, signed-off file manifest and exact archive bytes
-        shell: bash
+      - name: Inspect archive without extracting or executing
         run: |
-          set -euo pipefail
-          test "${GITHUB_REF}" = 'refs/heads/release/v9.1.0-reviewed-20260921'
-          baseline='6fd63d9bf60ecf21e0ca5155bd7c5864bd399269'
-          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$baseline" || { echo 'main moved; stop and reconcile before import'; exit 1; }
-          git merge-base --is-ancestor "$baseline" HEAD
           python3 - <<'PY'
           from pathlib import Path
-          import base64, hashlib, io, lzma, tarfile
-          payload=''.join(Path(path).read_text(encoding='ascii').strip() for path in ['scripts/v91_payload.b64','scripts/v91_payload.part1','scripts/v91_payload.part2','scripts/v91_payload.part3'])
-          raw=base64.b64decode(payload,validate=True)
-          assert hashlib.sha256(raw).hexdigest()=='f6eb5e7b9584d05eda1c562361db7fa89cbcf942f20915632ccb5386e5dbc418','Archive checksum mismatch'
-          expected_text='''ee28fb866010c9fd72df5b3b4974501405bb1ddc .env.example
-          7ce3585aa740f7b0e1b19abb64886e434c51d972 .github/workflows/deploy-supabase.yml
-          5b62c8c52157a7f1ea3938b853deb84f543358c6 .github/workflows/import-supabase.yml
-          d3d19d0e5e46b6d8cf68fb9a1a589f152604b51a .github/workflows/shared-typecheck.yml
-          42c8173017760ad088593804c55e54589bb904a1 README.md
-          c87975268370b7ecb9d2d822c7386b49c4d2a569 supabase/config.toml
-          21074bab228fbdc8be5b3c297654e3499673c0cd supabase/functions/_shared/version.ts
-          bd2a12d6b502fddc365b889589003d80d5d48774 supabase/functions/saeed-ai-reminders/index.ts
-          99130cb31b86b0cea5bef1b7ca0f4c6dc104ce6b supabase/functions/saeed-ai-ui/core/config.ts
-          771f3efa5fb7ea8cbb99d9bf566cdf9b7a3d87cb supabase/functions/saeed-ai-ui/index.ts
-          1b336c2dd65d02ff72bef31fdc6fa815e8eec9d7 supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md
-          c420449c23ceb8e9b69c57441259dfa29e66a826 supabase/functions/saeed-ai-v7/core/admin.ts
-          05ce69f95af27bea57545e63ea36eed7023efcc3 supabase/functions/saeed-ai-v7/core/life.ts
-          e6c715eff4d8a12767f8418c2b8a6a4ccdb9f382 supabase/functions/saeed-ai-v7/core/work.ts
-          4c3dc6d80b9141a3c4c95aac455974919d8f16b6 supabase/functions/saeed-ai-v7/index.ts
-          d6b8956098893349bd9d9e54756807dffc275fda supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql
-          9b0db0f624e8f63b12b21f6b09aefc4f2611f159 tests/gateway-routing.test.mjs'''
-          expected=dict(line.strip().split(' ',1)[::-1] for line in expected_text.splitlines())
-          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(raw)),mode='r:') as tar:
-            members=tar.getmembers()
-            assert len(members)==len(expected)==17
-            assert set(m.name for m in members)==set(expected),'Unexpected or missing archive path'
-            for member in members:
-              assert member.isfile() and member.size<25000 and not member.name.startswith('/') and '..' not in Path(member.name).parts
-              target=Path(member.name)
-              assert not target.is_symlink(), 'Would overwrite symlink'
-              data=tar.extractfile(member).read()
-              sha=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-              assert sha==expected[member.name],f'File checksum mismatch: {member.name}'
-              target.parent.mkdir(parents=True,exist_ok=True)
-              target.write_bytes(data)
-          print('PASS: extracted exactly 17 matched ZIP files with pinned hashes')
+          import base64,hashlib,lzma,tarfile,io
+          p=Path('scripts/v91_payload.b64').read_text().strip()
+          print('Encoded length',len(p))
+          raw=base64.b64decode(p,validate=True)
+          print('Decoded length',len(raw),'sha256',hashlib.sha256(raw).hexdigest())
+          data=lzma.decompress(raw)
+          print('Tar length',len(data))
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:') as tar:
+            for m in tar.getmembers(): print('Archive entry:',m.name,m.size)
           PY
-      - name: Typecheck every Edge Function and run all 28 regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts
-          deno check --config supabase/functions/saeed-ai-ui/deno.json supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-ui/core/*.ts
-          deno check supabase/functions/_shared/*.ts
-          deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
-          node --experimental-strip-types --test tests/*.test.mjs
-          grep -Fq '20260921040749_saeed_ai_v91_keyboard_page_states.sql' .github/workflows/deploy-supabase.yml
-          grep -Fq '20260921040749_saeed_ai_v91_keyboard_page_states.sql' tests/gateway-routing.test.mjs
-      - name: Retire temporary import files, commit ONLY to review branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${GITHUB_REF}" = 'refs/heads/release/v9.1.0-reviewed-20260921'
-          git rm -- .github/workflows/verified-v91-import-once.yml scripts/v91_payload.b64 scripts/v91_payload.part1 scripts/v91_payload.part2 scripts/v91_payload.part3
-          git add -- .env.example .github/workflows/deploy-supabase.yml .github/workflows/import-supabase.yml .github/workflows/shared-typecheck.yml README.md supabase/config.toml supabase/functions/_shared/version.ts supabase/functions/saeed-ai-reminders/index.ts supabase/functions/saeed-ai-ui/core/config.ts supabase/functions/saeed-ai-ui/index.ts supabase/functions/saeed-ai-v7/V9_RELEASE_NOTES.md supabase/functions/saeed-ai-v7/core/admin.ts supabase/functions/saeed-ai-v7/core/life.ts supabase/functions/saeed-ai-v7/core/work.ts supabase/functions/saeed-ai-v7/index.ts supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql tests/gateway-routing.test.mjs
-          git diff --cached --check
-          git status --short
-          test "$(git diff --cached --name-only | wc -l)" -eq 22
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: ship reviewed Saeed AI v9.1.0 fixes from supplied ZIP'
-          git push origin HEAD:refs/heads/release/v9.1.0-reviewed-20260921
