@@ -201,7 +201,17 @@ export async function reply(m, update, forcedTool = null) {
   } catch (e) {
     const reason = e instanceof Error ? e.message : "UNKNOWN";
     console.error("TEXT", reason.slice(0, 80));
-    if (answered) return;
+    if (answered) {
+      // The answer was generated and saved; delivery partially failed.
+      // Silence here would leave the user waiting forever.
+      try {
+        await send(
+          chatId,
+          "⚠️ پاسخ آماده شد ولی ارسال کامل نبود؛ می‌تونی از خروجی MD کمک بگیری.",
+        );
+      } catch {}
+      return;
+    }
     if (reserved)
       await db.rpc("saeed_ai_refund_daily", { p_update_id: update });
     await db.from("telegram_chat_messages").delete().eq("id", row.id);

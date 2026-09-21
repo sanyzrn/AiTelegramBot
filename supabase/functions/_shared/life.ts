@@ -42,7 +42,9 @@ export async function renderTasks(c: LifeContext, id: number, chat: number, mess
   const view = {
     chat_id: chat,
     text: "✅ تسک‌های من:\n" + (tasks.map((x: any) => `${x.done ? "☑️" : "▫️"} ${x.task}`).join("\n") || "فعلاً خالیه. یک کار جدید بگو."),
-    reply_markup: { inline_keyboard: rows },
+    // Telegram rejects an empty inline_keyboard with a 400, which used to turn
+    // "delete the last task" into a generic router error.
+    ...(rows.length ? { reply_markup: { inline_keyboard: rows } } : {}),
   };
   if (messageId) {
     try {
@@ -105,9 +107,10 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
   if (add) {
     const items = add[1].split(/[،,\n]/u).map((x) => x.trim()).filter((x) => x.length && x.length <= 120).slice(0, 20);
     if (!items.length) { await c.send(chat, "کالاهای خرید رو با ویرگول جدا کن."); return true; }
-    const { error } = await c.db.from("saeed_ai_shopping").upsert(items.map((item) => ({ telegram_user_id: id, item })), { onConflict: "telegram_user_id,item", ignoreDuplicates: true });
+    const { data: added, error } = await c.db.from("saeed_ai_shopping").upsert(items.map((item) => ({ telegram_user_id: id, item })), { onConflict: "telegram_user_id,item", ignoreDuplicates: true }).select("id");
     if (error) throw Error("SHOP_SAVE");
-    await c.send(chat, `🛒 ${items.length} قلم به لیست خرید اضافه شد. برای دیدنش «لیست خرید» رو بفرست.`);
+    const newCount = added?.length ?? 0;
+    await c.send(chat, newCount ? `🛒 ${newCount.toLocaleString("fa-IR")} قلم به لیست خرید اضافه شد. برای دیدنش «لیست خرید» رو بفرست.` : "ℹ️ همه این‌ها قبلاً توی لیست خرید بودن؛ چیزی اضافه نکردم.");
     return true;
   }
   if (/^(?:\/shopping|لیست\s+خرید|خرید[‌\s-]*هام)$/iu.test(msg)) {

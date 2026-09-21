@@ -1,6 +1,15 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 9.1.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version. The release version lives in `supabase/functions/_shared/version.ts` and every health endpoint reports it.
+**Current application release: 9.2.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`) are legacy deployment identifiers, **not** the application version. The release version lives in `supabase/functions/_shared/version.ts` and every health endpoint reports it.
+
+## v9.2.0 fixes and hardening
+
+- **Voice honors the chosen tool.** Sending a voice after picking «🎙 صوت به متن»، «📝 خلاصه» یا «🌍 ترجمه» from the tools keyboard now runs exactly that operation; previously every voice was forced into the auto-execute flow and the selection was silently ignored.
+- **Deleting the last task no longer errors.** Refreshing a task list with zero items sent an empty `inline_keyboard`, which Telegram rejects with HTTP 400; the empty markup is now omitted and the list degrades to a clean «فعلاً خالیه» message.
+- **«انجام شد ۳» works.** Numeric task completion now accepts Persian digits and indexes the exact same 30-newest list the inline renderer shows, instead of a different 20-item query that could tick the wrong task.
+- **The processor's web tool really searches.** Grounded Google Search moved to `_shared/web-search.ts`; a `web` intent classified inside the processor (for example while replying to a voice) now returns sourced answers instead of memory-based text presented as online results.
+- **Admin flows fail closed.** An unknown or stale `pending_action` in `telegram_bot_admin_flow` no longer falls through to the OpenRouter model save; it is reported and dropped.
+- **Honest shopping and delivery notices.** Duplicate shopping items are no longer counted as newly added, and the gateway reports a partially failed delivery instead of staying silent after a successful generation.
 
 ## v9.1.0 fixes and hardening
 
@@ -24,7 +33,7 @@ The legacy per-function `deno.json` configs still use `strict: false`; **this is
 
 ## Production release contract
 
-`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9.1.0 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
+`.github/workflows/deploy-supabase.yml` is the canonical production pipeline. It triggers on changes in **any** `supabase/functions/_shared/**` file, both Telegram function directories, the reminder dispatcher, Supabase config and the deployment workflow. Before deployment it checks the TypeScript entrypoints **and every extracted `core/*.ts` module**, the shared modules and reminder dispatcher, rejects typecheck suppressions and inconsistent release versions, validates authentication/capabilities and runs the complete Node test suite. It deploys the processor, reminder dispatcher and then gateway, and checks **live** v9.2.0 health/version/capability responses for all three. A green unit test without deployment does not imply Telegram is running the new code.
 
 The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Both Telegram Edge Functions authenticate the `X-Telegram-Bot-Api-Secret-Token`; cron separately authenticates `X-Saeed-Cron-Secret` using a service-role-only RPC.
 
@@ -41,11 +50,11 @@ The deployment secret is the existing GitHub Actions `SUPABASE_DEPLOY_TOKEN`. Bo
 - **Morning briefing:** opt-in, disabled by default, covering tasks, upcoming reminders, expenses and independently sourced weather/market sections. Weather currently uses Tehran. Rates that are stale or lack reliable timestamp/source are withheld, not invented.
 - **UI:** Telegram collapsible reply keyboard, home message «بفرما حاجی چی تو ذهنته 😁» and configurable tone and answer length.
 
-Health version `9.1.0` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
+Health version `9.2.0` and capability flags are checked on all three live functions; those flags confirm the code path is deployed, not that an actual Telegram end-to-end interaction succeeded.
 
 ## Verification and remaining feature limits
 
-Run `deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts`, the equivalent check for `saeed-ai-ui`, `deno check supabase/functions/_shared/*.ts`, and `node --experimental-strip-types --test tests/*.test.mjs`; require a green canonical production deployment. `tests/gateway-routing.test.mjs` additionally proves every reply-keyboard button is gateway-routable, every `pending_tool` is forwarded, the delete-confirmation page is accepted by the schema and the webhook `?setup` call is authenticated. Test a real voice, scheduled reminder delivery, shopping tick/undo and opt-in briefing in Telegram before claiming those scenarios are end-to-end verified. Rich all-in-one sentence parsing, user-selected briefing cities, shared shopping lists, calendar/receipt integrations and a dedicated daily dashboard are not implemented yet.
+Run `deno check --config supabase/functions/saeed-ai-v7/deno.json supabase/functions/saeed-ai-v7/index.ts supabase/functions/saeed-ai-v7/core/*.ts`, the equivalent check for `saeed-ai-ui`, `deno check supabase/functions/_shared/*.ts`, and `node --experimental-strip-types --test tests/*.test.mjs`; require a green canonical production deployment. `tests/gateway-routing.test.mjs` additionally proves every reply-keyboard button is gateway-routable, every `pending_tool` is forwarded, the delete-confirmation page is accepted by the schema and the webhook `?setup` call is authenticated. `tests/v92.test.mjs` locks the empty-task-list markup, honest shopping counts, voice tool selection, admin flow fail-closed guard and the shared grounded search. Test a real voice, scheduled reminder delivery, shopping tick/undo and opt-in briefing in Telegram before claiming those scenarios are end-to-end verified. Rich all-in-one sentence parsing, user-selected briefing cities, shared shopping lists, calendar/receipt integrations and a dedicated daily dashboard are not implemented yet.
 
 ## Recovery
 

@@ -58,6 +58,7 @@ export async function cfg() {
     provider: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
     gemini: x.get("model") || "gemini-3.5-flash-lite",
     openrouter: x.get("openrouter_model") || "google/gemma-4-26b-a4b-it:free",
+    search: x.get("search_model") || x.get("model") || "gemini-3.5-flash-lite",
     daily: Number(x.get("daily_limit") ?? 40),
   };
 }
@@ -226,6 +227,12 @@ export async function adminInput(id, chat, text) {
     });
     if (e) throw Error("QUOTA_WRITE");
     await send(chat, "✅ سهمیه اختصاصی ثبت شد.");
+    return true;
+  }
+  if (a !== "add_model" && a !== "add_openrouter_model") {
+    // Unknown or stale flow actions must fail closed; previously any leftover
+    // value fell through and was saved as the OpenRouter model identifier.
+    await send(chat, "🤔 این درخواست مدیریتی شناسایی نشد؛ از پنل مدیریت دوباره شروع کن.");
     return true;
   }
   const provider = a === "add_model" ? "gemini" : "openrouter",
