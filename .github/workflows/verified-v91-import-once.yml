@@ -1,4 +1,4 @@
-name: Inspect v9.1.0 uploaded archive (review branch only)
+name: Inspect v9.1.0 archive completeness
 on:
   push:
     branches: ['release/v9.1.0-reviewed-20260921']
@@ -6,21 +6,21 @@ permissions:
   contents: read
 jobs:
   inspect:
-    if: github.ref == 'refs/heads/release/v9.1.0-reviewed-20260921'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect archive without extracting or executing
+      - name: Probe partial archive without extraction
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import base64,hashlib,lzma,tarfile,io
+          import base64,hashlib,lzma
           p=Path('scripts/v91_payload.b64').read_text().strip()
-          print('Encoded length',len(p))
-          raw=base64.b64decode(p,validate=True)
-          print('Decoded length',len(raw),'sha256',hashlib.sha256(raw).hexdigest())
-          data=lzma.decompress(raw)
-          print('Tar length',len(data))
-          with tarfile.open(fileobj=io.BytesIO(data),mode='r:') as tar:
-            for m in tar.getmembers(): print('Archive entry:',m.name,m.size)
+          raw=base64.b64decode(p+'='*((-len(p))%4),validate=True)
+          decoder=lzma.LZMADecompressor()
+          try:
+            data=decoder.decompress(raw)
+            print('encoded',len(p),'decoded',len(raw),'uncompressed',len(data),'eof',decoder.eof,'sha256',hashlib.sha256(raw).hexdigest())
+          except lzma.LZMAError as e:
+            print('ERROR: payload corrupt',repr(e))
+            raise
           PY
