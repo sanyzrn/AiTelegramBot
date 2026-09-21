@@ -45,6 +45,9 @@ jobs:
           def hash_blob(path):
             return subprocess.check_output(['git','hash-object',path],text=True).strip()
           for path,sha in m['baseline'].items():
+            if path=='supabase/functions/saeed-ai-reminders/deno.lock':
+              assert not Path(path).exists(), 'ZIP-only lockfile must not be imported'
+              continue
             assert Path(path).is_file() and hash_blob(path)==sha, f'Existing file diverged: {path}'
           patch=m['patch']
           assert re.findall(r'(?m)^--- a/(.+)$',patch)==[p for p in expected if p not in added]
@@ -62,7 +65,7 @@ jobs:
             assert hash_blob(path)==sha, f'Unexpected result: {path}'
             subprocess.run(['git','add','--',path],check=True)
           assert subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()==expected
-          print('PASS: exact v9.2 baseline and exactly 15 reviewed v9.3 files verified')
+          print('PASS: exact deployed v9.2 baseline and exactly 15 reviewed v9.3 files verified')
           PY
       - name: Deno typecheck all entrypoints and modules; run all regressions
         shell: bash
