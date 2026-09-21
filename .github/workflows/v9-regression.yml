@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/v9-regression.yml'
+      - '.github/workflows/**'
+      - 'scripts/**'
       - 'supabase/functions/_shared/**'
       - 'supabase/functions/saeed-ai-v7/**'
       - 'supabase/functions/saeed-ai-ui/**'
@@ -11,6 +12,8 @@ on:
       - 'tests/**'
   pull_request:
     paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
       - 'supabase/functions/_shared/**'
       - 'supabase/functions/saeed-ai-v7/**'
       - 'supabase/functions/saeed-ai-ui/**'
@@ -44,4 +47,23 @@ jobs:
           assert 'handleLifeCallback' in index, 'private callbacks must be wired'
           assert 'calculateExact' in index, 'exact calculator must be wired'
           print('PASS: non-destructive task creation and v9 integration guards')
+          PY
+      - name: Never allow automatic writes to main from legacy patch workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflows=Path('.github/workflows')
+          expected={'deploy-supabase.yml','import-supabase.yml','shared-typecheck.yml','v9-regression.yml'}
+          actual={p.name for p in workflows.glob('*.yml')}
+          assert actual == expected, f'Review new or missing workflow: {sorted(actual ^ expected)}'
+          assert not list(Path('scripts').glob('*.py')), 'One-shot source patch scripts must stay retired'
+          for path in workflows.glob('*.yml'):
+            source=path.read_text()
+            if path.name == 'import-supabase.yml':
+              assert 'workflow_dispatch:' in source and '  push:' not in source, 'Recovery import must be manual-only'
+              continue
+            assert 'contents: write' not in source, f'Unexpected source write access: {path}'
+          print('PASS: automatic workflows cannot patch or write to main')
           PY
