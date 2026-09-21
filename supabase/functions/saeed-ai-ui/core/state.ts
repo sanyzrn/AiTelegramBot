@@ -1,7 +1,5 @@
 /** Saeed AI saeed-ai-ui state module. Source moved without behavioral rewrites. */
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",

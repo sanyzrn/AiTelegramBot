@@ -1,12 +1,9 @@
 /** Saeed AI saeed-ai-ui conversation module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
 import { forward, send, tg } from "./transport.ts";
 import { GK, RK, admin, db } from "./state.ts";
 import { config, readHistory, toneGuide } from "./config.ts";
 import { groundedSearch, searchMessage } from "./search.ts";
 import { deliver, stripRepeatedIntro } from "./output.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export async function reply(m, update, forcedTool = null) {
   const id = m.from.id,

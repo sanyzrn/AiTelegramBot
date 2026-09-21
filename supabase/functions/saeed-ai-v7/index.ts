@@ -1,11 +1,8 @@
 /** Saeed AI saeed-ai-v7 index module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
 import { calculateExact } from "../_shared/calculator.ts";
-import { parseTimerRequest, type TimerRequest } from "../_shared/timer.ts";
-import { voiceFollowupMode, isSpokenRequest } from "../_shared/voice-intent.ts";
-import { unzipSync } from "npm:fflate@0.8.2";
+import { parseTimerRequest } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
 import { GK, admin, db, ready, reply } from "./core/state.ts";
 import { adminInput, allowed, cfg, exportMd, pref, save, stats } from "./core/admin.ts";

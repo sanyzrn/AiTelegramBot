@@ -1,5 +1,4 @@
 /** Saeed AI saeed-ai-ui index module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { BASE, GK, admin, db, out, ready } from "./core/state.ts";
 import { esc, stripRepeatedIntro } from "./core/output.ts";

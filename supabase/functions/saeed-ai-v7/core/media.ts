@@ -1,14 +1,7 @@
 /** Saeed AI saeed-ai-v7 media module. Source moved without behavioral rewrites. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { selectToolIntent } from "../../_shared/intent-model.ts";
-import { handleLifeMessage, handleLifeCallback } from "../../_shared/life.ts";
-import { calculateExact } from "../../_shared/calculator.ts";
-import { parseTimerRequest, type TimerRequest } from "../../_shared/timer.ts";
-import { voiceFollowupMode, isSpokenRequest } from "../../_shared/voice-intent.ts";
 import { unzipSync } from "npm:fflate@0.8.2";
 import { tg } from "./transport.ts";
 import { TOKEN } from "./state.ts";
-declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 export async function file(id, size, max = 7000000) {
   if (size && size > max) throw Error("FILE_LARGE");
