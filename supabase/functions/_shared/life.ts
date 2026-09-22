@@ -266,9 +266,21 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
   return false;
 }
 
+const CALLBACK_ACTIONS: Record<string, string[]> = {
+  task: ["done", "undo", "delete"],
+  shop: ["done", "undo", "delete", "clear"],
+  reminder: ["done", "snooze", "cancel"],
+  exp: ["delete"],
+  mem: ["delete", "clear"],
+  watch: ["cancel"],
+  rcpt: ["ok", "no"],
+};
+
 export async function handleLifeCallback(c: LifeContext, id: number, chat: number, callback: string, messageId?: number): Promise<boolean> {
   const m = /^(task|shop|reminder|exp|mem|watch|rcpt):(done|delete|undo|snooze|cancel|clear|ok|no):(\d{1,16})$/.exec(callback);
   if (!m) return false;
+  // Only real button pairs are honoured; a forged «task:clear» must not act like undo.
+  if (!CALLBACK_ACTIONS[m[1]].includes(m[2])) return true;
   const key = safeId(m[3]);
   if (!Number.isSafeInteger(key)) return true;
   if (m[1] === "task") {

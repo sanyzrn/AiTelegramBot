@@ -7,8 +7,12 @@ export type Tg = (method: string, payload: Record<string, unknown>) => Promise<a
 
 /** Error carrying Telegram's description so callers can react to e.g. "message is not modified". */
 export class TelegramError extends Error {
-  constructor(public status: number, public description: string) {
+  status: number;
+  description: string;
+  constructor(status: number, description: string) {
     super(`TELEGRAM_${status}${description ? ": " + description.slice(0, 120) : ""}`);
+    this.status = status;
+    this.description = description;
   }
 }
 
@@ -36,6 +40,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export function createTg(token: string, fetcher: Fetcher = fetch, wait = sleep): Tg {
   return async function tg(method, payload) {
+    let serverRetried = false;
     for (let attempt = 0; ; attempt++) {
       const r = await fetcher(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST",
@@ -54,7 +59,8 @@ export function createTg(token: string, fetcher: Fetcher = fetch, wait = sleep):
         await wait(retryAfter * 1000 + 100);
         continue;
       }
-      if (attempt < 1 && r.status >= 500) {
+      if (!serverRetried && r.status >= 500) {
+        serverRetried = true;
         await wait(700);
         continue;
       }

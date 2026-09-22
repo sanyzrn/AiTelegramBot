@@ -14,7 +14,7 @@ type Msg = {
   photo?: unknown;
   voice?: unknown;
   audio?: unknown;
-  reply_to_message?: { voice?: unknown; audio?: unknown; text?: string; caption?: string };
+  reply_to_message?: { voice?: unknown; audio?: unknown; text?: string; caption?: string } | null;
 };
 
 /** Decisions that need no database: media, commands, buttons and typed life commands. */
