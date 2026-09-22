@@ -5,6 +5,7 @@ import { pickSearchModel } from "../../_shared/web-search.ts";
 export async function ai(s, contents, system, opts: { search?: boolean } = {}) {
   if (s.provider === "gemini") {
     const useSearch = !!opts.search;
+    const model = useSearch ? pickSearchModel(s.search || s.gemini) : s.gemini;
     const body: Record<string, unknown> = {
       systemInstruction: { parts: [{ text: system }] },
       contents,
@@ -19,7 +20,7 @@ export async function ai(s, contents, system, opts: { search?: boolean } = {}) {
     }
     const r = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/" +
-        encodeURIComponent(useSearch ? pickSearchModel(s.search || s.gemini) : s.gemini) +
+        encodeURIComponent(model) +
         ":generateContent",
       {
         method: "POST",
@@ -39,6 +40,7 @@ export async function ai(s, contents, system, opts: { search?: boolean } = {}) {
         input: j.usageMetadata?.promptTokenCount,
         output: j.usageMetadata?.candidatesTokenCount,
       },
+      model,
     };
   }
   if (!RK) throw Error("AI_KEY");
@@ -87,5 +89,6 @@ export async function ai(s, contents, system, opts: { search?: boolean } = {}) {
       input: j.usage?.prompt_tokens,
       output: j.usage?.completion_tokens,
     },
+    model: s.openrouter,
   };
 }
