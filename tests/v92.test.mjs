@@ -84,8 +84,18 @@ test('processor web tool uses the shared grounded search with sources', () => {
   const shared = read('_shared/web-search.ts');
   assert.match(shared, /google_search/);
   assert.match(shared, /SEARCH_NO_SOURCES/);
+  assert.match(shared, /pickSearchModel/);
+  assert.match(shared, /thinkingLevel/);
   const wrapper = read('saeed-ai-ui/core/search.ts');
   assert.match(wrapper, /_shared\/web-search\.ts/, 'gateway must delegate to the shared module');
+});
+
+test('regular Gemini chat enables google_search so live questions are not offline', () => {
+  const conversation = read('saeed-ai-ui/core/conversation.ts');
+  assert.match(conversation, /google_search/);
+  const model = read('saeed-ai-v7/core/model.ts');
+  assert.match(model, /google_search/);
+  assert.match(model, /opts\.search|search:/);
 });
 
 test('numeric task completion accepts Persian digits', () => {

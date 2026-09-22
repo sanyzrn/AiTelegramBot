@@ -1,20 +1,30 @@
 /** Gemini and OpenRouter request adapter: no UI, database or media dependencies. */
 import { GK, RK } from "./state.ts";
+import { pickSearchModel } from "../../_shared/web-search.ts";
 
-export async function ai(s, contents, system) {
+export async function ai(s, contents, system, opts: { search?: boolean } = {}) {
   if (s.provider === "gemini") {
+    const useSearch = !!opts.search;
+    const body: Record<string, unknown> = {
+      systemInstruction: { parts: [{ text: system }] },
+      contents,
+      generationConfig: { maxOutputTokens: 8192 },
+    };
+    if (useSearch) {
+      body.tools = [{ google_search: {} }];
+      body.generationConfig = {
+        maxOutputTokens: 8192,
+        thinkingConfig: { thinkingLevel: "minimal" },
+      };
+    }
     const r = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/" +
-        encodeURIComponent(s.gemini) +
+        encodeURIComponent(useSearch ? pickSearchModel(s.search || s.gemini) : s.gemini) +
         ":generateContent",
       {
         method: "POST",
         headers: { "x-goog-api-key": GK, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents,
-          generationConfig: { maxOutputTokens: 4096 },
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(90000),
       },
     );

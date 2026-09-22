@@ -24,12 +24,45 @@ type GroundedResponse = {
 
 type Source = { title?: string; uri: string };
 
-export async function groundedSearch(
+/** Search-capable default; flash-lite and custom chat models often lack grounding. */
+export const DEFAULT_SEARCH_MODEL = "gemini-3.5-flash";
+
+export function pickSearchModel(configured?: string | null): string {
+  const m = (configured || "").trim();
+  if (!m) return DEFAULT_SEARCH_MODEL;
+  // Lite variants historically reject or skip google_search grounding.
+  if (/lite/i.test(m)) return DEFAULT_SEARCH_MODEL;
+  return m;
+}
+
+export function extractSources(g: GroundingMetadata | undefined): Source[] {
+  return [
+    ...new Map<string, Source>(
+      (g?.groundingChunks || [])
+        .filter((x: { web?: { uri?: string; title?: string } }) =>
+          /^https:\/\//.test(x.web?.uri || ""))
+        .map((x: { web?: { uri?: string; title?: string } }) => [
+          x.web!.uri as string,
+          { title: x.web?.title, uri: x.web!.uri as string },
+        ]),
+    ).values(),
+  ].slice(0, 5);
+}
+
+export function formatSources(sources: Source[]): string {
+  return (
+    "\n\n📚 منابع:\n" +
+    sources.map((x) => (x.title || "منبع") + "\n" + x.uri).join("\n")
+  );
+}
+
+async function generateWithSearch(
   query: string,
   system: string,
   model: string,
   key: string,
-): Promise<GroundedResult> {
+  bodyExtras: Record<string, unknown>,
+): Promise<{ r: Response; j: GroundedResponse }> {
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -47,7 +80,7 @@ export async function groundedSearch(
         },
         contents: [{ role: "user", parts: [{ text: query }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { maxOutputTokens: 4096 },
+        ...bodyExtras,
       }),
       signal: AbortSignal.timeout(90000),
     },
@@ -56,49 +89,76 @@ export async function groundedSearch(
     console.error("SEARCH_API_STATUS", r.status, "MODEL", model);
     throw Error("SEARCH_HTTP_" + r.status);
   }
-  const j: GroundedResponse = await r.json(),
-    c = j.candidates?.[0],
-    g = c?.groundingMetadata || {},
-    text = (c?.content?.parts || [])
-      .filter((x: Part) => !x.thought && typeof x.text === "string")
-      .map((x: Part) => x.text as string)
-      .join("\n")
-      .trim(),
-    sources: Source[] = [
-      ...new Map<string, Source>(
-        (g.groundingChunks || [])
-          .filter((x: { web?: { uri?: string; title?: string } }) =>
-            /^https:\/\//.test(x.web?.uri || ""))
-          .map((x: { web?: { uri?: string; title?: string } }) => [
-            x.web!.uri as string,
-            { title: x.web?.title, uri: x.web!.uri as string },
-          ]),
-      ).values(),
-    ].slice(0, 5);
-  if (!text) throw Error("SEARCH_EMPTY");
-  if (!sources.length) {
-    console.error(
-      "SEARCH_NO_GROUNDING",
-      JSON.stringify({
-        model,
-        queries: (g.webSearchQueries || []).length,
-        hasEntryPoint: !!g.searchEntryPoint,
-        finishReason: c?.finishReason,
-      }),
-    );
-    throw Error("SEARCH_NO_SOURCES");
+  return { r, j: await r.json() };
+}
+
+export async function groundedSearch(
+  query: string,
+  system: string,
+  model: string,
+  key: string,
+): Promise<GroundedResult> {
+  const primary = pickSearchModel(model);
+  const candidates = primary === DEFAULT_SEARCH_MODEL
+    ? [primary, "gemini-2.5-flash"]
+    : [primary, DEFAULT_SEARCH_MODEL, "gemini-2.5-flash"];
+  let lastErr: Error = Error("SEARCH_EMPTY");
+  for (const modelName of candidates) {
+    // Thinking models can burn the whole token budget on thought parts and
+    // return an empty visible answer; prefer minimal thinking first.
+    const attempts: Array<Record<string, unknown>> = [
+      {
+        generationConfig: {
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: "minimal" },
+        },
+      },
+      { generationConfig: { maxOutputTokens: 8192 } },
+    ];
+    for (const extras of attempts) {
+      try {
+        const { j } = await generateWithSearch(query, system, modelName, key, extras);
+        const c = j.candidates?.[0],
+          g = c?.groundingMetadata || j.groundingMetadata || {},
+          text = (c?.content?.parts || [])
+            .filter((x: Part) => !x.thought && typeof x.text === "string")
+            .map((x: Part) => x.text as string)
+            .join("\n")
+            .trim(),
+          sources = extractSources(g);
+        if (!text) {
+          lastErr = Error("SEARCH_EMPTY");
+          continue;
+        }
+        if (!sources.length) {
+          console.error(
+            "SEARCH_NO_GROUNDING",
+            JSON.stringify({
+              model: modelName,
+              queries: (g.webSearchQueries || []).length,
+              hasEntryPoint: !!g.searchEntryPoint,
+              finishReason: c?.finishReason,
+            }),
+          );
+          lastErr = Error("SEARCH_NO_SOURCES");
+          continue;
+        }
+        return {
+          text: text + formatSources(sources),
+          usage: {
+            input: j.usageMetadata?.promptTokenCount,
+            output: j.usageMetadata?.candidatesTokenCount,
+          },
+          model: modelName,
+        };
+      } catch (e) {
+        lastErr = e instanceof Error ? e : Error("SEARCH_EMPTY");
+        // Model/tool rejection: try the next attempt or model. Quota/auth: stop.
+        if (/SEARCH_HTTP_(401|403|429)/.test(lastErr.message)) throw lastErr;
+      }
+    }
   }
-  return {
-    text:
-      text +
-      "\n\n📚 منابع:\n" +
-      sources.map((x) => (x.title || "منبع") + "\n" + x.uri).join("\n"),
-    usage: {
-      input: j.usageMetadata?.promptTokenCount,
-      output: j.usageMetadata?.candidatesTokenCount,
-    },
-    model,
-  };
+  throw lastErr;
 }
 
 export function searchMessage(reason: string): string {
@@ -112,5 +172,7 @@ export function searchMessage(reason: string): string {
     return "🌐 مدل جست‌وجو در API پذیرفته نشد؛ نام مدل و دسترسی Grounding باید بررسی بشه. ❤️";
   if (/SEARCH_NO_SOURCES/.test(reason))
     return "🌐 مدل پاسخ داد، اما لینک منبع معتبر برنگردوند. برای اینکه منبع ساختگی ندم، نتیجه رو منتشر نکردم. دوباره با سؤال دقیق‌تر امتحان کن. ❤️";
+  if (/SEARCH_EMPTY/.test(reason))
+    return "🌐 جست‌وجو اجرا شد ولی پاسخ قابل نمایشی برنگشت؛ دوباره با عبارت کوتاه‌تر امتحان کن. ❤️";
   return "🌐 جست‌وجوی آنلاین فعلاً پاسخ معتبر نداد؛ دوباره امتحان کن. ❤️";
 }

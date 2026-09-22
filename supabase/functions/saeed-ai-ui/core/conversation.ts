@@ -111,6 +111,8 @@ export async function reply(m, update, forcedTool = null) {
       usage = r.usage;
       usedModel = r.model;
     } else if (s.provider === "gemini") {
+      // google_search lets the model look up live facts instead of answering
+      // from training data as if it were offline.
       const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(s.gemini)}:generateContent`,
         {
@@ -119,7 +121,11 @@ export async function reply(m, update, forcedTool = null) {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
             contents: [...history, { role: "user", parts: [{ text: query }] }],
-            generationConfig: { maxOutputTokens: 4096 },
+            tools: [{ google_search: {} }],
+            generationConfig: {
+              maxOutputTokens: 8192,
+              thinkingConfig: { thinkingLevel: "minimal" },
+            },
           }),
           signal: AbortSignal.timeout(90000),
         },

@@ -4,7 +4,7 @@ import { handleLifeMessage } from "../../_shared/life.ts";
 import { calculateExact } from "../../_shared/calculator.ts";
 import { parseTimerRequest } from "../../_shared/timer.ts";
 import { isSpokenRequest } from "../../_shared/voice-intent.ts";
-import { groundedSearch } from "../../_shared/web-search.ts";
+import { groundedSearch, searchMessage, pickSearchModel } from "../../_shared/web-search.ts";
 import { GK, RK, admin, db } from "./state.ts";
 import { cfg, documentSend, pref, save } from "./admin.ts";
 import { base64, doc, file, media, parseDoc, repo } from "./media.ts";
@@ -30,13 +30,13 @@ async function refund(update) {
   if (error) console.error("REFUND", error.code);
 }
 
-async function metric(update, id, s, status, usage: { input?: number | null; output?: number | null } = {}, reason = "") {
+async function metric(update, id, s, status, usage: { input?: number | null; output?: number | null } = {}, reason = "", modelOverride = "") {
   const { error } = await db.from("saeed_ai_metrics").upsert(
     {
       telegram_update_id: update,
       telegram_user_id: id,
       provider: s.provider,
-      model: s[s.provider],
+      model: modelOverride || s[s.provider],
       status,
       input_tokens: usage.input ?? null,
       output_tokens: usage.output ?? null,
@@ -63,7 +63,7 @@ function failMessage(err) {
             : /GH_/.test(s)
               ? "💻 الان امکان بررسی کامل این مخزن نیست؛ لینک یا حجمش رو بررسی کن. 😅"
               : /SEARCH_/.test(s)
-                ? "🌐 جست‌وجوی آنلاین فعلاً پاسخ معتبر نداد؛ دوباره امتحان کن. 🌙"
+                ? searchMessage(s)
                 : /429/.test(s)
                 ? "⏳ الان یکم شلوغه؛ کمی بعد دوباره امتحان کن. 😅"
                 : "🙈 این درخواست درست انجام نشد؛ دوباره امتحان کن. 💛";
@@ -330,9 +330,13 @@ async function work(
     // The «آنلاین» tool must actually search, no matter which entrypoint
     // classified the intent; without this the processor answered web requests
     // from memory while presenting them as online results.
+    // Regular Gemini chat also gets google_search so live questions are not
+    // answered from training data as if the model were offline.
     const result = tool === "web"
       ? await groundedSearch(input, system, s.search, GK)
-      : await ai(s, [...context, { role: "user", parts }], system);
+      : await ai(s, [...context, { role: "user", parts }], system, {
+          search: tool === "chat" && !med && !document,
+        });
     if (tool === "execute" && med?.type === "audio" &&
         /(?:تایمر|یادآور|ریمایندر).{0,70}(?:تنظیم شد|ثبت شد|فعال شد|ساخته شد)/iu.test(result.text || ""))
       result.text = "⚠️ این اقدام واقعاً ثبت نشده؛ برای تنظیم تایمر یا یادآور، درخواست زمان‌دار و واضح بفرست.";
@@ -346,7 +350,7 @@ async function work(
     });
     if (error) throw Error("ANSWER_SAVE");
     answered = true;
-    await metric(update, id, s, "success", result.usage);
+    await metric(update, id, s, "success", result.usage, "", tool === "web" ? result.model : "");
     await db
       .from("saeed_ai_retry")
       .update({ status: "completed" })
@@ -389,7 +393,7 @@ async function work(
       .delete()
       .eq("id", row)
       .eq("telegram_user_id", id);
-    await metric(update, id, s, "failed", {}, reason);
+    await metric(update, id, s, "failed", {}, reason, tool === "web" ? pickSearchModel(s.search) : "");
     await db
       .from("saeed_ai_retry")
       .update({ status: "failed" })

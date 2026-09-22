@@ -1,5 +1,6 @@
 /** Saeed AI saeed-ai-ui config module. Source moved without behavioral rewrites. */
 import { db } from "./state.ts";
+import { pickSearchModel } from "../../_shared/web-search.ts";
 
 export const MENUS = new Set([
   "💬 گفتگو",
@@ -85,7 +86,7 @@ export async function config() {
     provider: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
     gemini: x.get("model") || "gemini-3.5-flash-lite",
     openrouter: x.get("openrouter_model") || "google/gemma-4-26b-a4b-it:free",
-    search: x.get("search_model") || x.get("model") || "gemini-3.5-flash-lite",
+    search: pickSearchModel(x.get("search_model") || x.get("model")),
   };
 }
 

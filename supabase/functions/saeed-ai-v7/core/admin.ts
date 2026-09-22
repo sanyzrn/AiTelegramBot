@@ -1,5 +1,6 @@
 /** Saeed AI saeed-ai-v7 admin module. Source moved without behavioral rewrites. */
 import { ADMIN, GK, LEGACY, RK, TOKEN, admin, db } from "./state.ts";
+import { pickSearchModel } from "../../_shared/web-search.ts";
 import { send } from "./transport.ts";
 
 export async function allowed(id, chat) {
@@ -58,7 +59,7 @@ export async function cfg() {
     provider: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
     gemini: x.get("model") || "gemini-3.5-flash-lite",
     openrouter: x.get("openrouter_model") || "google/gemma-4-26b-a4b-it:free",
-    search: x.get("search_model") || x.get("model") || "gemini-3.5-flash-lite",
+    search: pickSearchModel(x.get("search_model") || x.get("model")),
     daily: Number(x.get("daily_limit") ?? 40),
   };
 }

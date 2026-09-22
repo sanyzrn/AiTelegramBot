@@ -1,9 +1,18 @@
 import { parseTimerRequest } from "./timer.ts";
 export type ToolIntent = "chat" | "remind" | "tasks" | "web" | "repo" | "summarize" | "translate" | "rewrite" | "calc" | "email" | "ideas" | "expenses" | "shopping" | "briefing";
+/** Explicit search commands — matched before how-to so «جستجو کن چطور…» still searches. */
+const EXPLICIT_WEB =
+  /(?:جست(?:جو|‌جو|‌وجو|و\s*جو)\s*(?:کن|کنم|بزن|بگیر)|جست(?:جو|‌جو|‌وجو)ی\s*(?:آنلاین|اینترنت|وب)|(?:آنلاین|اینترنت|وب)\s*(?:جست(?:جو|‌جو|‌وجو)|سرچ|بگرد|پیدا\s*کن)|سرچ\s*کن|search\s+(?:the\s+)?web|search\s+online|google\s+(?:کن|it)|بگرد\s*(?:دنبال|درباره|راجع)|تو\s*(?:اینترنت|گوگل|وب)\s*(?:بگرد|سرچ|جست))/iu;
+/** Live facts that almost always need Google Search, not training data. */
+const LIVE_FACTS =
+  /(?:قیمت|نرخ|نرخِ|ارزش)\s*(?:الان|امروز|لحظه|فعلی|دلار|یورو|طلا|سکه|بیت|بیت‌کوین|مسکن|ارز|سکه|بنزین|نفت)|(?:خبر|رویداد|اتفاق|نتیجه|امتیاز)\s*(?:های?\s*)?(?:امروز|جدید|اخیر|آخرین|امسال)|(?:آب[\s‌]*و[\s‌]*هوا|هوا)ی?\s*(?:امروز|الان|فردا|این\s*هفته)|(?:چه\s*کسی|کی)\s+(?:برنده|رئیس|قهرمان|انتخاب)\s|who\s+(?:won|is|was)\s+(?:the\s+)?(?:latest|current|today|recent)|latest\s+(?:news|price|score|result)|today'?s\s+(?:news|price|weather|score)/iu;
 /** Classify only explicit current requests, never treat examples or questions as actions. */
 export function inferToolIntent(text: string): ToolIntent {
   const input = text.trim();
   if (/^(?:سلام|درود|hello|hi)[!؟?.،\s]*$/iu.test(input)) return "chat";
+  if (EXPLICIT_WEB.test(input)) return "web";
+  // Live-fact questions before how-to: «آب و هوای امروز چطوره؟» is weather, not a tutorial.
+  if (LIVE_FACTS.test(input)) return "web";
   if (/(?:چطور|چگونه|آموزش|مثال|how\s+to)/iu.test(input)) return "chat";
   if (parseTimerRequest(input)) return "remind";
   if (/(?:تایمر|زمان[‌\s-]*سنج|timer)/iu.test(input) &&
@@ -17,7 +26,7 @@ export function inferToolIntent(text: string): ToolIntent {
   if (/(?:یادم\s*بنداز|یادآور(?:ی)?\s*(?:بذار|بگذار|ثبت|تنظیم|بساز)|ریمایندر\s*(?:بذار|بگذار|ثبت|بساز)|remind\s+me|set\s+(?:a\s+)?reminder)/iu.test(input)) return "remind";
   if (/https:\/\/github\.com\/[\w-]+\/[\w.-]+/i.test(input) && /(?:بررسی|تحلیل|audit|review|آنالیز)/iu.test(input)) return "repo";
   if (/(?:جستجو\s*کن|جست‌وجو\s*کن|آنلاین\s*بگرد|تو\s*اینترنت\s*بگرد|search\s+(?:the\s+)?web)/iu.test(input)) return "web";
-  if (/(?:تسک(?:‌|\s)*(?:بساز|درست\s*کن|ثبت\s*کن)|لیست\s*کار(?:هام|هایم)?\s*(?:بساز|درست\s*کن)|create\s+(?:a\s+)?task\s*list)/iu.test(input)) return "tasks";
+  if (/(?:تسک(?:‌|\s)*(?:بساز|درست\s*کن|ثبت\s*کن)|لیست\s+کار(?:هام|هایم)?\s*(?:بساز|درست\s*کن)|create\s+(?:a\s+)?task\s*list)/iu.test(input)) return "tasks";
   if (/(?:خلاصه\s*کن|summari[sz]e)/iu.test(input)) return "summarize";
   if (/(?:ترجمه\s*کن|translate)/iu.test(input)) return "translate";
   if (/(?:بازنویسی\s*کن|rewrite)/iu.test(input)) return "rewrite";

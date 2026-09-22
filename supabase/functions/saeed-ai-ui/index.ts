@@ -27,6 +27,8 @@ Deno.serve(async (req) => {
       copyable_blocks: true,
       conversation_context: true,
       search_model_configurable: true,
+      search_live_facts_routing: true,
+      chat_google_search_tool: true,
     });
   if (req.method === "GET" && url.searchParams.has("selftest")) {
     const rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g,

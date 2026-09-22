@@ -281,7 +281,7 @@ test('migration and workflows carry the v9.3 city feature', () => {
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lat DOUBLE PRECISION/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lon DOUBLE PRECISION/);
   assert.match(sql, /saeed_ai_briefing_city_pair_chk/);
-  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "9\.3\.1"/);
+  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "9\.4\.0"/);
   assert.match(readFileSync(resolve('.github/workflows/shared-typecheck.yml'), 'utf8'), /morning-voice\.ts/);
 });
 
