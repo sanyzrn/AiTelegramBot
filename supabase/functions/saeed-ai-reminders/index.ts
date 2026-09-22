@@ -97,6 +97,7 @@ async function dispatchBriefings() {
       };
       const voiceCfg = await morningVoiceConfig();
       const voice = await composeMorningVoice(voiceCfg, facts, fetch);
+      // briefingIntro supplies the deterministic fallbackIntro without repeating the sourced weather.
       const intro = briefingIntro(voice, facts);
       const { signoff } = dayQuote(day);
       const body = [
