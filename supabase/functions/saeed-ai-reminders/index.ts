@@ -2,7 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { APP_VERSION } from "../_shared/version.ts";
 import { nextOccurrence, type RepeatRule } from "../_shared/repeat.ts";
 import { fetchCityWeather, fetchIranMarket, type CityRef } from "../_shared/briefing-sources.ts";
-import { composeMorningVoice, fallbackIntro, dayQuote, type MorningFacts, type VoiceConfig } from "../_shared/morning-voice.ts";
+import { composeMorningVoice, dayQuote, type MorningFacts, type VoiceConfig } from "../_shared/morning-voice.ts";
+import { briefingIntro } from "../_shared/briefing-intro.ts";
 const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const GKEY = Deno.env.get("GEMINI_API_KEY") || "";
@@ -96,7 +97,8 @@ async function dispatchBriefings() {
       };
       const voiceCfg = await morningVoiceConfig();
       const voice = await composeMorningVoice(voiceCfg, facts, fetch);
-      const intro = voice || fallbackIntro(facts);
+      // briefingIntro supplies the deterministic fallbackIntro without repeating the sourced weather.
+      const intro = briefingIntro(voice, facts);
       const { signoff } = dayQuote(day);
       const body = [
         `☀️ صبح‌نامه ${dayLabel}`,
