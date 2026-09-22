@@ -13,13 +13,15 @@ import { chooseVoice, handleVoiceReply, voiceAction } from "./core/voice.ts";
 import { MENU, TOOLS, keyboard, navigate, rows, show } from "./core/ui.ts";
 import { doneTask, profile, saveTasks, scheduleRealTimer, setReminder } from "./core/life.ts";
 import { doc, media } from "./core/media.ts";
+import type { TgMessage, TgUpdate } from "../_shared/telegram.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 const RECEIPT_CAPTION = /(?:رسید|فاکتور|فیش|خرج|receipt|invoice)/iu;
 
-const life = (from) => ({ db, tg, send, actorName: [from?.first_name, from?.last_name].filter(Boolean).join(" ").slice(0, 60) });
+const life = (from?: TgMessage["from"]) => ({ db, tg, send, actorName: [from?.first_name, from?.last_name].filter(Boolean).join(" ").slice(0, 60) });
 
-async function callbacks(c, update) {
+async function callbacks(c: NonNullable<TgUpdate["callback_query"]>, update: number) {
+  if (!c.message) return;
   const id = c.from.id,
     chat = c.message.chat.id,
     a = c.data || "";
@@ -40,7 +42,7 @@ async function callbacks(c, update) {
     return voiceAction(id, chat, act, update);
   }
   if (a === "v6:stats") return stats(id, chat);
-  const maps = {
+  const maps: Record<string, string> = {
     "nav:home": "home",
     "nav:tools": "tools",
     "nav:settings": "settings",
@@ -67,7 +69,7 @@ async function callbacks(c, update) {
   return show(id, chat, "home");
 }
 
-async function message(m, update) {
+async function message(m: TgMessage, update: number) {
   const id = m.from.id,
     chat = m.chat.id,
     text = (m.text || "").trim(),
@@ -127,22 +129,22 @@ async function message(m, update) {
     const key = text.match(
         /^\/(transcribe|voice_summary|voice_translate|voice_execute|voice_tasks)/,
       )?.[1],
-      act = {
+      act = ({
         transcribe: "transcribe",
         voice_summary: "summarize",
         voice_translate: "translate",
         voice_execute: "execute",
         voice_tasks: "execute",
-      }[key];
+      } as Record<string, string>)[key || "transcribe"];
     return voiceAction(id, chat, act, update);
   }
-  const funTap = {
+  const funTap = ({
     "🔮 طالع": "horoscope",
     "🧠 تست هوش": "trivia",
     "📖 داستان": "story",
     "😂 جوک": "joke",
     "🔥 روست": "roast",
-  }[text];
+  } as Record<string, string>)[text];
   if (funTap) return startWork(m, update, funTap, "", null);
   if (await navigate(id, chat, text, p)) return;
   // Persian-digit input is the norm here; «انجام شد ۳» must work like «انجام شد 3».
@@ -179,8 +181,8 @@ async function message(m, update) {
   // A gateway-selected intent is validated against this local allowlist.
   const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing"]);
   const requestText = (m.caption || text).trim();
-  const inferred = p.pending_tool === "chat" && requestText
-    ? safeTools.has(m.saeed_auto_tool)
+  const inferred: string = p.pending_tool === "chat" && requestText
+    ? m.saeed_auto_tool && safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
       : await selectToolIntent(requestText, GK, (await cfg()).gemini)
     : "chat";

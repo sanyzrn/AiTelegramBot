@@ -1,5 +1,5 @@
 /** Shared runtime configuration for the Saeed AI processor. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.57.0";
 import { isAdmin, readAccessEnv } from "../../_shared/access.ts";
 import { createTg } from "../../_shared/telegram.ts";
 import { escapeHtml } from "../../_shared/format.ts";
@@ -21,17 +21,20 @@ try {
   KEY = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}").default || KEY;
 } catch {}
 
-export const db =
+const client =
   BASE && KEY
     ? createClient(BASE, KEY, {
         auth: { persistSession: false, autoRefreshToken: false },
       })
     : null;
 
+/** Only used after ready() confirmed the client exists. */
+export const db = client as SupabaseClient;
+
 export const tg = createTg(TOKEN);
 
-export const ready = () => !!(db && TOKEN && GK && ADMIN),
-  admin = (id) => isAdmin(ACCESS, id),
-  reply = (x, status = 200) => Response.json(x, { status, headers: { "Cache-Control": "no-store" } }),
+export const ready = () => !!(client && TOKEN && GK && ADMIN),
+  admin = (id: unknown) => isAdmin(ACCESS, id),
+  reply = (x: unknown, status = 200) => Response.json(x, { status, headers: { "Cache-Control": "no-store" } }),
   esc = escapeHtml,
   keys = { gemini: GK, openrouter: RK };

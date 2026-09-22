@@ -12,6 +12,6 @@ export function config() {
 }
 
 /** Merged-role history (strict providers reject repeated roles). */
-export function readHistory(id, chat, row) {
+export function readHistory(id: number, chat: number, row: number) {
   return sharedHistory(db, id, chat, row, 12);
 }

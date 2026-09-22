@@ -1,7 +1,7 @@
 /** Saeed AI saeed-ai-ui transport module: webhook secret, Telegram output and processor forwarding. */
 import { ACCESS, BASE, TOKEN, db, tg } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
-import { safeEqual, sendPlain, webhookSecret } from "../../_shared/telegram.ts";
+import { safeEqual, sendPlain, webhookSecret, type TgUpdate } from "../../_shared/telegram.ts";
 
 let HOOK = "";
 
@@ -13,11 +13,11 @@ export async function hook() {
 export const equal = safeEqual;
 export { tg };
 
-export function send(chat, text) {
+export function send(chat: number, text: string) {
   return sendPlain(tg, chat, text);
 }
 
-export async function forward(update) {
+export async function forward(update: TgUpdate) {
   const r = await fetch(BASE + "/functions/v1/saeed-ai-v7", {
     method: "POST",
     headers: {
@@ -30,7 +30,7 @@ export async function forward(update) {
   if (!r.ok) throw Error("FORWARD_" + r.status);
 }
 
-export function allowed(id, chat) {
+export function allowed(id: number, chat: { id?: unknown; type?: string } | undefined) {
   return isAllowed(db, ACCESS, id, chat);
 }
 
@@ -38,7 +38,7 @@ export function allowed(id, chat) {
  * Per-minute flood guard (the daily quota alone let one user burst hundreds of
  * requests). Fails open on a database error so a missing RPC never blocks chat.
  */
-export async function withinRate(id, limit) {
+export async function withinRate(id: number, limit: number) {
   const { data, error } = await db.rpc("saeed_ai_rate_hit", { p_user_id: id, p_limit: limit });
   if (error) {
     console.error("RATE", error.code);

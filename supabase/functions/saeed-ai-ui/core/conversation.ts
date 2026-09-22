@@ -4,12 +4,13 @@ import { GK, RK, admin, db } from "./state.ts";
 import { config, readHistory } from "./config.ts";
 import { groundedSearch, searchMessage } from "./search.ts";
 import { deliver, stripRepeatedIntro } from "./output.ts";
+import type { TgMessage } from "../../_shared/telegram.ts";
 import { generate } from "../../_shared/ai.ts";
 import { appendUserTurn } from "../../_shared/history.ts";
 import { systemPrompt } from "../../_shared/tone.ts";
 import { loadMemories } from "../../_shared/life-memories.ts";
 
-export async function reply(m, update, forcedTool = null) {
+export async function reply(m: TgMessage, update: number, forcedTool: "web" | null = null) {
   const id = m.from.id,
     chatId = m.chat.id,
     prompt = (m.text || m.caption || "").trim(),

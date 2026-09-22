@@ -8,6 +8,7 @@ import { MENUS, config, readHistory } from "./core/config.ts";
 import { reply } from "./core/conversation.ts";
 import { groundedSearch, searchMessage } from "./core/search.ts";
 import { allowed, equal, forward, hook, send, tg, withinRate } from "./core/transport.ts";
+import type { TgUpdate } from "../_shared/telegram.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 Deno.serve(async (req) => {
@@ -95,7 +96,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return out({ error: "Not found" }, 404);
   if (!ready()) return out({ error: "Not configured" }, 503);
   if (!(await secretOk())) return out({ error: "Unauthorized" }, 401);
-  let update;
+  let update: TgUpdate;
   try {
     const raw = await req.text();
     if (raw.length > 128000) throw Error();

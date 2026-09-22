@@ -1,6 +1,6 @@
 /** Telegram menus, preferences and guarded navigation. */
 import { WEBAPP_URL, admin, db, tg } from "./state.ts";
-import { cfg, configSet, exportMd, flow, save, stats, testModel } from "./admin.ts";
+import { cfg, configSet, exportMd, flow, save, stats, testModel, type Pref } from "./admin.ts";
 import { send } from "./transport.ts";
 import { listTasks, profile } from "./life.ts";
 import { handleLifeMessage } from "../../_shared/life.ts";
@@ -10,7 +10,7 @@ import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from "../../_shared/bo
 import { ADMIN_PAGES, BUTTON_COMMANDS, DASHBOARD_BUTTON, TONES, SIZES, LANG, TOOLS } from "./menu.ts";
 export { TONES, SIZES, LANG, TOOLS, MENU, rows, keyboard, toneGuide } from "./menu.ts";
 
-export async function show(id, chat, page) {
+export async function show(id: number, chat: number, page: string) {
   if (ADMIN_PAGES.includes(page) && !admin(id))
     return;
   const p = await save(id, { keyboard_page: page }),
@@ -58,8 +58,8 @@ export async function show(id, chat, page) {
   await send(chat, body, page, id);
 }
 
-export async function navigate(id, chat, text, p) {
-  const pages = {
+export async function navigate(id: number, chat: number, text: string, p: Pref) {
+  const pages: Record<string, string> = {
     "🏠 خانه": "home",
     "🧰 ابزارها": "tools",
     "⚙️ تنظیمات": "settings",
@@ -184,7 +184,7 @@ export async function navigate(id, chat, text, p) {
     return true;
   }
   if (admin(id)) {
-    const tasks = {
+    const tasks: Record<string, string> = {
       "➕ افزودن کاربر": "add_user",
       "🚫 حذف کاربر": "remove_user",
       "✏️ سقف پیش‌فرض": "set_daily_default",

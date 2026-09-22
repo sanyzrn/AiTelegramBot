@@ -4,11 +4,14 @@ import { isAllowed } from "../../_shared/access.ts";
 import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
 import { send } from "./transport.ts";
 
-export function allowed(id, chat) {
+export type Pref = { telegram_user_id: number; tone: string; answer_length: string; language: string; pending_tool: string; keyboard_page: string };
+type Chat = { id?: unknown; type?: string } | undefined;
+
+export function allowed(id: number, chat: Chat) {
   return isAllowed(db, ACCESS, id, chat);
 }
 
-export async function pref(id) {
+export async function pref(id: number): Promise<Pref> {
   const { data, error } = await db
     .from("telegram_bot_preferences")
     .select(PREF_COLUMNS)
@@ -33,7 +36,7 @@ const PREF_COLUMNS = "telegram_user_id,tone,answer_length,language,pending_tool,
  * Partial update of only the changed columns; a whole-row read-modify-write
  * could overwrite a concurrent change (e.g. tone saved while a tool resets).
  */
-export async function save(id, patch) {
+export async function save(id: number, patch: Partial<Pref>): Promise<Pref> {
   const changes = { ...patch, updated_at: new Date().toISOString() };
   const { data, error } = await db
     .from("telegram_bot_preferences")
@@ -56,7 +59,7 @@ export function cfg() {
   return readBotConfig(db);
 }
 
-export async function configSet(key, val) {
+export async function configSet(key: string, val: string | number) {
   const { error } = await db.from("telegram_bot_config").upsert(
     {
       setting_key: key,
@@ -69,7 +72,7 @@ export async function configSet(key, val) {
   clearBotConfigCache();
 }
 
-export async function stats(id, chat) {
+export async function stats(id: number, chat: number) {
   if (!admin(id)) return;
   const since = new Date(Date.now() - 86400000).toISOString(),
     { data, error } = await db
@@ -97,7 +100,7 @@ export async function stats(id, chat) {
   );
 }
 
-export async function flow(id, action) {
+export async function flow(id: number, action: string) {
   const { error } = await db.from("telegram_bot_admin_flow").upsert({
     telegram_user_id: id,
     pending_action: action,
@@ -107,7 +110,7 @@ export async function flow(id, action) {
   if (error) throw Error("FLOW");
 }
 
-export async function testModel(provider, model) {
+export async function testModel(provider: string, model: string) {
   const r =
     provider === "gemini"
       ? await fetch(
@@ -147,13 +150,13 @@ export async function testModel(provider, model) {
   const j = await r.json();
   if (
     !(provider === "gemini"
-      ? j.candidates?.[0]?.content?.parts?.some((x) => x.text)
+      ? j.candidates?.[0]?.content?.parts?.some((x: { text?: string }) => x.text)
       : j.choices?.[0]?.message?.content)
   )
     throw Error("NO_REPLY");
 }
 
-export async function adminInput(id, chat, text) {
+export async function adminInput(id: number, chat: number, text: string) {
   if (!admin(id)) return false;
   const { data, error } = await db
     .from("telegram_bot_admin_flow")
@@ -250,7 +253,7 @@ export async function adminInput(id, chat, text) {
 }
 
 /** Every message still inside the privacy window (chat rows expire after 15 minutes). */
-export async function exportAll(id, chat) {
+export async function exportAll(id: number, chat: number) {
   const { data, error } = await db
     .from("telegram_chat_messages")
     .select("role,body,created_at")
@@ -269,7 +272,7 @@ export async function exportAll(id, chat) {
   return documentSend(chat, body, "saeed-conversation.md");
 }
 
-export async function exportMd(id, chat) {
+export async function exportMd(id: number, chat: number) {
   const { data, error } = await db
     .from("telegram_chat_messages")
     .select("body")
@@ -284,7 +287,7 @@ export async function exportMd(id, chat) {
   return documentSend(chat, data.body, "saeed-last-answer.md");
 }
 
-export async function documentSend(chat, body, name) {
+export async function documentSend(chat: number, body: string, name: string) {
   const form = new FormData();
   form.append("chat_id", String(chat));
   form.append(

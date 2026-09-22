@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>داشبورد سعید</title>
+  <!-- API endpoint: overridden by ?api=… in WEBAPP_URL, e.g. https://<ref>.supabase.co/functions/v1/saeed-ai-webapp -->
+  <meta name="saeed-api" content="">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --bg2: var(--tg-theme-secondary-bg-color, #f2f3f5);
+      --text: var(--tg-theme-text-color, #16181d);
+      --hint: var(--tg-theme-hint-color, #7a7f89);
+      --accent: var(--tg-theme-button-color, #2f7cf6);
+      --accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --danger: var(--tg-theme-destructive-text-color, #e5484d);
+      --card: var(--tg-theme-section-bg-color, var(--bg));
+      --line: color-mix(in srgb, var(--hint) 22%, transparent);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg2); color: var(--text); font: 15px/1.6 Vazirmatn, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+    header { padding: 20px 16px 8px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .sub { color: var(--hint); font-size: 13px; }
+    nav { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; padding: 8px 16px; background: var(--bg2); overflow-x: auto; }
+    nav button { flex: 1 0 auto; border: 0; border-radius: 999px; padding: 8px 14px; background: var(--card); color: var(--text); font: inherit; font-weight: 600; }
+    nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
+    main { padding: 8px 16px 32px; }
+    section[hidden] { display: none; }
+    .card { background: var(--card); border-radius: 16px; padding: 14px 16px; margin: 12px 0; }
+    .card h2 { margin: 0 0 8px; font-size: 16px; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+    .row:first-of-type { border-top: 0; }
+    .row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .row small { display: block; color: var(--hint); }
+    .done .grow { color: var(--hint); text-decoration: line-through; }
+    .check { width: 26px; height: 26px; flex: none; border-radius: 8px; border: 2px solid var(--accent); background: transparent; color: var(--accent-text); font-size: 15px; }
+    .done .check { background: var(--accent); }
+    .x { border: 0; background: transparent; color: var(--danger); font-size: 18px; padding: 4px 6px; }
+    .empty { color: var(--hint); padding: 6px 0; }
+    .big { font-size: 26px; font-weight: 800; }
+    svg text { fill: var(--hint); font: 10px Vazirmatn, sans-serif; }
+    .bar { fill: var(--accent); }
+    .cat { margin: 8px 0; }
+    .cat .track { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 4px; }
+    .cat .fill { height: 100%; background: var(--accent); }
+    label.switch { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+    label.switch:first-of-type { border-top: 0; }
+    select, input[type=checkbox] { accent-color: var(--accent); }
+    select { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+    #toast { position: fixed; inset-inline: 16px; bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; text-align: center; }
+    #toast.show { opacity: .95; }
+    .loading { color: var(--hint); text-align: center; padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>داشبورد سعید 😎</h1>
+    <div class="sub" id="tz"></div>
+  </header>
+  <nav role="tablist">
+    <button role="tab" data-tab="today" aria-selected="true">امروز</button>
+    <button role="tab" data-tab="money" aria-selected="false">خرج‌ها</button>
+    <button role="tab" data-tab="shop" aria-selected="false">خرید</button>
+    <button role="tab" data-tab="settings" aria-selected="false">تنظیمات</button>
+  </nav>
+  <main>
+    <div class="loading" id="loading">در حال بارگذاری…</div>
+    <section id="today" hidden>
+      <div class="card"><h2>⏰ یادآورهای پیش رو</h2><div id="reminders"></div></div>
+      <div class="card"><h2>✅ تسک‌ها</h2><div id="tasks"></div></div>
+    </section>
+    <section id="money" hidden>
+      <div class="card"><h2>💰 ۳۰ روز گذشته</h2><div class="big" id="total"></div><div id="chart"></div></div>
+      <div class="card"><h2>دسته‌ها</h2><div id="cats"></div></div>
+    </section>
+    <section id="shop" hidden>
+      <div class="card"><h2 id="shopTitle">🛒 لیست خرید</h2><div id="shopping"></div></div>
+    </section>
+    <section id="settings" hidden>
+      <div class="card"><h2>☀️ صبح‌نامه</h2>
+        <label class="switch">فعال <input type="checkbox" id="b_enabled"></label>
+        <label class="switch">ساعت ارسال <select id="b_hour"></select></label>
+        <label class="switch">نسخه‌ی صوتی 🔊 <input type="checkbox" id="b_voice"></label>
+        <div class="sub" id="city"></div>
+      </div>
+      <div class="card"><h2>📅 خلاصه‌ی هفته</h2>
+        <label class="switch">هر جمعه ساعت ۸ شب <input type="checkbox" id="b_weekly"></label>
+      </div>
+    </section>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script>
+    const tg = window.Telegram?.WebApp;
+    tg?.ready(); tg?.expand();
+    const params = new URLSearchParams(location.search);
+    const API = params.get('api') || document.querySelector('meta[name="saeed-api"]').content;
+    const fa = (n) => Number(n).toLocaleString('fa-IR');
+    const toman = (n) => fa(n) + ' تومان';
+    const $ = (id) => document.getElementById(id);
+    const el = (tag, attrs = {}, ...kids) => {
+      const node = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) k.startsWith('on') ? node.addEventListener(k.slice(2), v) : node.setAttribute(k, v);
+      for (const kid of kids) node.append(kid);
+      return node;
+    };
+    let state = null;
+
+    function toast(text) {
+      $('toast').textContent = text; $('toast').classList.add('show');
+      clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('show'), 2200);
+    }
+
+    async function call(action, extra = {}) {
+      if (!API) throw new Error('آدرس API تنظیم نشده');
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg?.initData || '' },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 401 ? 'فقط از داخل تلگرام باز کن' : r.status === 403 ? 'دسترسی نداری' : body.error || 'خطا');
+      return body;
+    }
+
+    async function act(action, extra, okText) {
+      try {
+        tg?.HapticFeedback?.impactOccurred('light');
+        state = await call(action, extra); render();
+        if (okText) toast(okText);
+      } catch (e) { toast('🙈 ' + e.message); }
+    }
+
+    function render() {
+      $('loading').hidden = true;
+      $('tz').textContent = 'منطقه زمانی: ' + state.timezone_label;
+      const fmt = new Intl.DateTimeFormat('fa-IR', { timeZone: state.timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+
+      const rem = $('reminders'); rem.replaceChildren();
+      if (!state.reminders.length) rem.append(el('div', { class: 'empty' }, 'یادآور فعالی نداری.'));
+      for (const r of state.reminders)
+        rem.append(el('div', { class: 'row' },
+          el('div', { class: 'grow' }, r.note, el('small', {}, fmt.format(new Date(r.remind_at)) + (r.repeat_rule !== 'none' ? ' · 🔁' : ''))),
+          el('button', { class: 'x', 'aria-label': 'لغو', onclick: () => act('reminder_cancel', { id: r.id }, 'لغو شد') }, '✕')));
+
+      const tasks = $('tasks'); tasks.replaceChildren();
+      if (!state.tasks.length) tasks.append(el('div', { class: 'empty' }, 'تسکی نداری؛ توی چت بگو «تسک بساز …».'));
+      for (const t of state.tasks)
+        tasks.append(el('div', { class: 'row' + (t.done ? ' done' : '') },
+          el('button', { class: 'check', 'aria-label': 'انجام شد', onclick: () => act('task_toggle', { id: t.id }) }, t.done ? '✓' : ''),
+          el('div', { class: 'grow' }, t.task),
+          el('button', { class: 'x', 'aria-label': 'حذف', onclick: () => act('task_delete', { id: t.id }, 'حذف شد') }, '🗑')));
+
+      $('total').textContent = toman(state.expenses.total);
+      const days = state.expenses.days, max = Math.max(1, ...days.map((d) => d.amount));
+      const w = 300, h = 110, bw = w / days.length;
+      const svg = ['<svg viewBox="0 0 ' + w + ' ' + (h + 14) + '" width="100%" role="img" aria-label="نمودار خرج روزانه">'];
+      days.forEach((d, i) => {
+        const bh = Math.round((d.amount / max) * h);
+        svg.push('<rect class="bar" rx="2" x="' + (w - (i + 1) * bw + 1) + '" y="' + (h - bh) + '" width="' + (bw - 2) + '" height="' + Math.max(bh, d.amount ? 2 : 0) + '"><title>' + d.day + ': ' + toman(d.amount) + '</title></rect>');
+      });
+      svg.push('<text x="' + (w - 2) + '" y="' + (h + 12) + '" text-anchor="start">۳۰ روز پیش</text><text x="2" y="' + (h + 12) + '" text-anchor="end">امروز</text></svg>');
+      $('chart').innerHTML = svg.join('');
+      const cats = $('cats'); cats.replaceChildren();
+      const top = state.expenses.categories[0]?.amount || 1;
+      if (!state.expenses.categories.length) cats.append(el('div', { class: 'empty' }, 'هنوز خرجی ثبت نکردی؛ مثلاً بنویس «ناهار ۴۸۰ هزار تومان».'));
+      for (const c of state.expenses.categories) {
+        const fill = el('div', { class: 'fill' }); fill.style.width = Math.round((c.amount / top) * 100) + '%';
+        cats.append(el('div', { class: 'cat' }, el('div', {}, c.name + ' — ' + toman(c.amount)), el('div', { class: 'track' }, fill)));
+      }
+
+      $('shopTitle').textContent = state.shopping.shared ? '🛒 لیست خرید مشترک 👨‍👩‍👧' : '🛒 لیست خرید';
+      const shop = $('shopping'); shop.replaceChildren();
+      if (!state.shopping.items.length) shop.append(el('div', { class: 'empty' }, 'خالیه؛ توی چت بگو «به لیست خرید اضافه کن شیر، نان».'));
+      for (const s of state.shopping.items)
+        shop.append(el('div', { class: 'row' + (s.done ? ' done' : '') },
+          el('button', { class: 'check', 'aria-label': 'خریدم', onclick: () => act('shop_toggle', { id: s.id }) }, s.done ? '✓' : ''),
+          el('div', { class: 'grow' }, s.item)));
+
+      const b = state.briefing;
+      $('b_enabled').checked = b.enabled; $('b_voice').checked = b.voice; $('b_weekly').checked = b.weekly;
+      $('b_hour').value = String(b.send_hour);
+      $('city').textContent = 'شهر: ' + b.city + ' (برای تغییر توی چت بگو «شهر من …»)';
+    }
+
+    for (let h = 5; h <= 11; h++) $('b_hour').append(el('option', { value: String(h) }, fa(h) + ':۰۰ صبح'));
+    $('b_enabled').addEventListener('change', (e) => act('briefing_update', { enabled: e.target.checked }, 'ذخیره شد'));
+    $('b_voice').addEventListener('change', (e) => act('briefing_update', { voice: e.target.checked }, 'ذخیره شد'));
+    $('b_weekly').addEventListener('change', (e) => act('briefing_update', { weekly: e.target.checked }, 'ذخیره شد'));
+    $('b_hour').addEventListener('change', (e) => act('briefing_update', { send_hour: Number(e.target.value) }, 'ذخیره شد'));
+
+    function show(tab) {
+      for (const b of document.querySelectorAll('nav button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+      for (const s of document.querySelectorAll('main section')) s.hidden = s.id !== tab || !state;
+    }
+    for (const b of document.querySelectorAll('nav button')) b.addEventListener('click', () => show(b.dataset.tab));
+
+    call('summary').then((s) => { state = s; render(); show('today'); })
+      .catch((e) => { $('loading').textContent = '🙈 ' + e.message; });
+  </script>
+</body>
+</html>

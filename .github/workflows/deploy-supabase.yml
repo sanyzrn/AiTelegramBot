@@ -7,6 +7,7 @@ on:
       - 'supabase/functions/saeed-ai-ui/**'
       - 'supabase/functions/saeed-ai-v7/**'
       - 'supabase/functions/saeed-ai-reminders/**'
+      - 'supabase/functions/saeed-ai-webapp/**'
       - 'supabase/config.toml'
       - 'supabase/migrations/**'
       - '.github/workflows/deploy-supabase.yml'
@@ -79,6 +80,7 @@ jobs:
           fi
           deno check supabase/functions/_shared/*.ts
           deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          deno check --config supabase/functions/saeed-ai-webapp/deno.json supabase/functions/saeed-ai-webapp/index.ts
           grep -Fq 'tasks_delete_confirm' supabase/functions/saeed-ai-v7/core/ui.ts
           grep -Fq 'tasks_delete_confirm' supabase/migrations/20260922120000_saeed_ai_v10_life_upgrades.sql
           for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_callback_refresh: true'; do
@@ -115,26 +117,27 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: 2.45.5
-      - name: Deploy processor, dispatcher, then webhook gateway
+      - name: Deploy processor, dispatcher, dashboard API, then webhook gateway
         shell: bash
         run: |
           set -euo pipefail
-          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
+          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-webapp saeed-ai-ui; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
           done
-      - name: Verify the live release and actual capability flags on all three
+      - name: Verify the live release and actual capability flags on every function
         shell: bash
         env:
           APP_VERSION: ${{ steps.version.outputs.app }}
         run: |
           set -euo pipefail
           base="https://${PROJECT_REF}.supabase.co/functions/v1"
-          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
+          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-webapp saeed-ai-ui; do
             payload="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 "$base/$fn?health=$(date +%s)")"
             printf '%s' "$payload" | jq -e --arg v "$APP_VERSION" '.configured == true and .version == $v' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
             case "$fn" in
               saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true and .v10_shared_engine == true and .v10_receipts == true' >/dev/null ;;
               saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true and .v10_rate_limit == true' >/dev/null ;;
+              saeed-ai-webapp) printf '%s' "$payload" | jq -e '.v10_webapp == true' >/dev/null ;;
               saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v93_city_voice == true and .v10_watchers == true' >/dev/null ;;
             esac
             echo "PASS: live $fn $APP_VERSION and capabilities"

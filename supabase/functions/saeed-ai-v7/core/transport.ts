@@ -3,6 +3,8 @@ import { TOKEN, WEBAPP_URL, admin, esc, tg } from "./state.ts";
 import { keyboard } from "./menu.ts";
 import { safeEqual, sendPlain, sendRich, webhookSecret } from "../../_shared/telegram.ts";
 
+type Part = [type: "text" | "code", body: string, lang: string];
+
 let HOOK = "";
 
 export async function hook() {
@@ -14,11 +16,11 @@ export const equal = safeEqual;
 export { tg };
 
 /** Plain text; the reply keyboard of `page` is attached to the last chunk. */
-export function send(chat, text, page = null, id = chat) {
+export function send(chat: number, text: string, page: string | null = null, id: number = chat) {
   return sendPlain(tg, chat, text, page ? { reply_markup: keyboard(page, admin(id), WEBAPP_URL) } : {});
 }
 
-export async function sendSpoiler(chat, q, a) {
+export async function sendSpoiler(chat: number, q: string, a: string) {
   await sendRich(tg, chat, q);
   await tg("sendMessage", {
     chat_id: chat,
@@ -27,7 +29,7 @@ export async function sendSpoiler(chat, q, a) {
   });
 }
 
-async function code(chat, body, lang = "") {
+async function code(chat: number, body: string, lang = "") {
   const a = Array.from(String(body));
   for (let i = 0; i < a.length; i += 2500) {
     const s = esc(a.slice(i, i + 2500).join("")),
@@ -43,8 +45,8 @@ async function code(chat, body, lang = "") {
 }
 
 /** Split fenced code into copyable blocks; prose is rendered from Markdown. */
-export function sections(text, tool, prompt) {
-  const parts = [],
+export function sections(text: string, tool: string, prompt: string): Part[] {
+  const parts: Part[] = [],
     rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g;
   let end = 0,
     m;
@@ -64,7 +66,7 @@ export function sections(text, tool, prompt) {
     const ls = text.split("\n"),
       i =
         tool === "summarize" || /خلاصه|summari[sz]e/i.test(prompt)
-          ? ls.findIndex((x) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x))
+          ? ls.findIndex((x: string) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x))
           : -1;
     if (i > 0) {
       parts.push(["text", ls.slice(0, i).join("\n").trim(), ""]);
@@ -74,7 +76,7 @@ export function sections(text, tool, prompt) {
   return parts;
 }
 
-export async function deliver(chat, text, tool, prompt) {
+export async function deliver(chat: number, text: string, tool: string, prompt: string) {
   for (const [type, t, l] of sections(text, tool, prompt)) {
     if (type === "code") await code(chat, t, l);
     else await sendRich(tg, chat, t);

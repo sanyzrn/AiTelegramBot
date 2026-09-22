@@ -111,3 +111,28 @@ export async function sendRich(tg: Tg, chat: number, markdown: string, extra: Re
     }
   }
 }
+
+/** Telegram file descriptor (photo size, voice, audio or document). */
+export type TgFile = { file_id: string; file_size?: number; mime_type?: string; file_name?: string };
+
+/** The subset of Telegram's Message object this bot reads. */
+export type TgMessage = {
+  message_id?: number;
+  text?: string;
+  caption?: string;
+  from: { id: number; is_bot?: boolean; first_name?: string; last_name?: string };
+  chat: { id: number; type?: string };
+  reply_to_message?: { message_id?: number; text?: string; caption?: string; voice?: TgFile | null; audio?: TgFile | null; from?: { is_bot?: boolean } } | null;
+  photo?: TgFile[] | null;
+  voice?: TgFile | null;
+  audio?: TgFile | null;
+  document?: TgFile | null;
+  /** Intent pre-selected by the gateway (validated again by the processor). */
+  saeed_auto_tool?: string;
+};
+
+export type TgUpdate = {
+  update_id: number;
+  message?: TgMessage;
+  callback_query?: { id: string; data?: string; from: TgMessage["from"]; message?: { message_id: number; chat: { id: number; type?: string } } };
+};

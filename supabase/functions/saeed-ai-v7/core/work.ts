@@ -12,15 +12,17 @@ import { parseJsonObject } from "../../_shared/ai.ts";
 import { parseReceiptJson, proposeReceipt, RECEIPT_PROMPT } from "../../_shared/receipt.ts";
 import { sendVoice, synthesize } from "../../_shared/tts.ts";
 import { GK, RK, TOKEN, TTS_MODEL, admin, db } from "./state.ts";
-import { cfg, documentSend, pref, save } from "./admin.ts";
-import { base64, doc, file, media, parseDoc, repo } from "./media.ts";
+import { cfg, documentSend, pref, save, type Pref } from "./admin.ts";
+import type { BotConfig } from "../../_shared/bot-config.ts";
+import type { TgMessage } from "../../_shared/telegram.ts";
+import { base64, doc, file, media, parseDoc, repo, type Doc, type Media } from "./media.ts";
 import { deliver, send, sendSpoiler, tg } from "./transport.ts";
 import { ai } from "./model.ts";
 import { saveTasks, scheduleRealTimer, setReminder } from "./life.ts";
 import { show } from "./ui.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
-export async function reserve(id, update) {
+export async function reserve(id: number, update: number) {
   const { data, error } = await db.rpc("saeed_ai_reserve_daily", {
     p_user_id: id,
     p_update_id: update,
@@ -30,7 +32,7 @@ export async function reserve(id, update) {
   return data;
 }
 
-async function refund(update) {
+async function refund(update: number) {
   // A failed refund must not mask the original failure, but it must be visible.
   const { error } = await db.rpc("saeed_ai_refund_daily", { p_update_id: update });
   if (error) console.error("REFUND", error.code);
@@ -41,7 +43,7 @@ async function refund(update) {
  * speech) are charged like any request. Returns false when nothing should run:
  * quota exhausted (user told) or a re-delivered Telegram update.
  */
-export async function charge(id, chat, update) {
+export async function charge(id: number, chat: number, update: number) {
   if (!Number.isSafeInteger(update) || update <= 0) return true;
   const q = await reserve(id, update);
   if (q.duplicate) return false;
@@ -52,7 +54,7 @@ export async function charge(id, chat, update) {
   return true;
 }
 
-async function metric(update, id, s, status, usage: { input?: number | null; output?: number | null } = {}, reason = "", modelOverride = "", providerOverride = "") {
+async function metric(update: number, id: number, s: BotConfig, status: string, usage: { input?: number | null; output?: number | null } = {}, reason = "", modelOverride = "", providerOverride = "") {
   const { error } = await db.from("saeed_ai_metrics").upsert(
     {
       telegram_update_id: update,
@@ -70,7 +72,7 @@ async function metric(update, id, s, status, usage: { input?: number | null; out
   if (error) console.error("METRICS", error.code);
 }
 
-function failMessage(err) {
+function failMessage(err: unknown) {
   const s = String(err);
   return /AI_(401|403)/.test(s)
     ? "🔑 دسترسی به سرویس هوش مصنوعی مشکل داره؛ به مدیر خبر بده. 💛"
@@ -93,7 +95,7 @@ function failMessage(err) {
                     : "🙈 این درخواست درست انجام نشد؛ دوباره امتحان کن. 💛";
 }
 
-export async function startWork(m, update, tool, prompt, override = null) {
+export async function startWork(m: TgMessage, update: number, tool: string, prompt: string, override: Media | null = null) {
   const id = m.from.id,
     chat = m.chat.id,
     original = update,
@@ -193,7 +195,7 @@ export async function startWork(m, update, tool, prompt, override = null) {
   );
 }
 
-async function completeRetry(original, id) {
+async function completeRetry(original: number, id: number) {
   const { error } = await db.from("saeed_ai_retry")
     .update({ status: "completed" })
     .eq("original_update_id", original)
@@ -202,16 +204,16 @@ async function completeRetry(original, id) {
 }
 
 async function work(
-  m,
-  row,
-  p,
-  s,
-  tool,
-  prompt,
-  med,
-  document,
-  original,
-  update,
+  m: TgMessage,
+  row: number,
+  p: Pref,
+  s: BotConfig,
+  tool: string,
+  prompt: string,
+  med: Media | null,
+  document: Doc | null,
+  original: number,
+  update: number,
 ) {
   const id = m.from.id,
     chat = m.chat.id;
@@ -256,7 +258,7 @@ async function work(
     else if (med?.type === "pdf" && !prompt)
       input = "این سند PDF را بررسی کن: موضوع، نکات کلیدی و هر عدد یا تاریخ مهم را خلاصه کن و محدودیت‌های بررسی را بگو.";
     if (!med && !document) {
-      const funMap = {
+      const funMap: Record<string, string> = {
         horoscope:
           "Write a playful, warm, clearly-for-fun daily horoscope for today in Persian with 2-4 emojis. Positive vibes only; never real predictions or advice about health, money or major decisions. Zodiac sign or vibe from user (empty = surprise them): ",
         trivia:
@@ -432,7 +434,7 @@ async function work(
   }
 }
 
-export async function retry(id, chat, update) {
+export async function retry(id: number, chat: number, update: number) {
   const { data: item, error } = await db
     .from("saeed_ai_retry")
     .select("original_update_id,source_message,tool")
@@ -469,7 +471,7 @@ export async function retry(id, chat, update) {
  * «بخونش» / /speak: the replied bot message (or the last answer) as a voice.
  * Charged like any AI request; failures are refunded.
  */
-export async function speak(id, chat, update, repliedText = "") {
+export async function speak(id: number, chat: number, update: number, repliedText = "") {
   let text = repliedText;
   if (!text) {
     const { data, error } = await db.from("telegram_chat_messages").select("body")

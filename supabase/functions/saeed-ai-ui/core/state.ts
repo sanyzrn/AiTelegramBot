@@ -1,5 +1,5 @@
 /** Saeed AI saeed-ai-ui state module: environment, database and Telegram client. */
-import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.57.0";
 import { isAdmin, readAccessEnv } from "../../_shared/access.ts";
 import { createTg } from "../../_shared/telegram.ts";
 
@@ -18,14 +18,17 @@ try {
   KEY = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}").default || KEY;
 } catch {}
 
-export const db =
-    BASE && KEY
-      ? createClient(BASE, KEY, {
-          auth: { persistSession: false, autoRefreshToken: false },
-        })
-      : null,
+const client =
+  BASE && KEY
+    ? createClient(BASE, KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : null;
+
+/** Only used after ready() confirmed the client exists. */
+export const db = client as SupabaseClient,
   tg = createTg(TOKEN),
-  ready = () => !!(db && TOKEN && GK && ACCESS.adminId),
-  admin = (id) => isAdmin(ACCESS, id),
-  out = (x, s = 200) =>
+  ready = () => !!(client && TOKEN && GK && ACCESS.adminId),
+  admin = (id: unknown) => isAdmin(ACCESS, id),
+  out = (x: unknown, s = 200) =>
     Response.json(x, { status: s, headers: { "Cache-Control": "no-store" } });

@@ -11,7 +11,7 @@ import { cfg, pref, save } from "./admin.ts";
 import { ai } from "./model.ts";
 import { LANG, SIZES, TONES } from "./menu.ts";
 
-export async function scheduleRealTimer(id, chat, timer: TimerRequest, update) {
+export async function scheduleRealTimer(id: number, chat: number, timer: TimerRequest, update: number) {
   if (!Number.isSafeInteger(update)) throw Error("TIMER_UPDATE");
   const due = new Date(Date.now() + timer.seconds * 1000);
   const tz = await userTimeZone(db, id);
@@ -33,7 +33,7 @@ export async function scheduleRealTimer(id, chat, timer: TimerRequest, update) {
     "tools", id);
 }
 
-export async function setReminder(id, chat, input, update = null) {
+export async function setReminder(id: number, chat: number, input: string, update: number | null = null) {
   // Reminder parsing uses Gemini regardless of the conversational provider.
   const s = { ...(await cfg()), provider: "gemini" as const };
   const tz = await userTimeZone(db, id);
@@ -74,9 +74,9 @@ export async function setReminder(id, chat, input, update = null) {
     return;
   }
   const rules = ["none", "daily", "weekly", "monthly", "hours"];
-  const rule = rules.includes(j?.repeat_rule) ? j.repeat_rule : "none";
-  const hours = rule === "hours" ? Number(j?.repeat_every_hours) : null;
-  if (rule === "hours" && (!Number.isInteger(hours) || hours < 1 || hours > 168)) {
+  const rule = rules.includes(String(j.repeat_rule)) ? String(j.repeat_rule) : "none";
+  const hours = rule === "hours" ? Number(j.repeat_every_hours) : null;
+  if (rule === "hours" && (hours === null || !Number.isInteger(hours) || hours < 1 || hours > 168)) {
     await send(chat, "⏰ فاصله تکرار باید بین ۱ تا ۱۶۸ ساعت باشه؛ زمان دقیق‌تر بگو.");
     return;
   }
@@ -113,7 +113,7 @@ export async function setReminder(id, chat, input, update = null) {
   );
 }
 
-export async function saveTasks(id, chat, input, update = null) {
+export async function saveTasks(id: number, chat: number, input: string, update: number | null = null) {
   const s = { ...(await cfg()), provider: "gemini" as const };
   const r = await ai(
     s,
@@ -153,11 +153,11 @@ export async function saveTasks(id, chat, input, update = null) {
   await renderTasks({ db, tg, send }, id, chat);
 }
 
-export async function listTasks(id, chat) {
+export async function listTasks(id: number, chat: number) {
   return handleLifeMessage({ db, tg, send }, id, chat, "/tasks", 0);
 }
 
-export async function doneTask(id, chat, n) {
+export async function doneTask(id: number, chat: number, n: number) {
   // Numbering must match the rendered list exactly: the 30 newest tasks,
   // oldest first, done items included — otherwise «انجام شد ۳» ticks a
   // different task than the one the user sees at position 3.
@@ -186,7 +186,7 @@ export async function doneTask(id, chat, n) {
   await renderTasks({ db, tg, send }, id, chat);
 }
 
-export async function profile(id, chat) {
+export async function profile(id: number, chat: number) {
   const p = await pref(id),
     s = await cfg(),
     tz = await userTimeZone(db, id),
