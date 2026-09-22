@@ -1,9 +1,13 @@
 {
   "version": "5",
   "specifiers": {
+    "npm:@breezystack/lamejs@1.2.7": "1.2.7",
     "npm:@supabase/supabase-js@2.57.0": "2.57.0"
   },
   "npm": {
+    "@breezystack/lamejs@1.2.7": {
+      "integrity": "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="
+    },
     "@supabase/auth-js@2.71.1": {
       "integrity": "sha512-mMIQHBRc+SKpZFRB2qtupuzulaUhFYupNyxqDj5Jp/LyPvcWvjaJzZzObv6URtL/O6lPxkanASnotGtNpS3H2Q==",
       "dependencies": [

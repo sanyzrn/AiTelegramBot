@@ -1,9 +1,14 @@
 /** Saeed AI saeed-ai-v7 media module. Source moved without behavioral rewrites. */
 import { unzipSync } from "npm:fflate@0.8.2";
 import { tg } from "./transport.ts";
-import { TOKEN } from "./state.ts";
+import { GH, TOKEN } from "./state.ts";
+import type { TgFile, TgMessage } from "../../_shared/telegram.ts";
 
-export async function file(id, size, max = 7000000) {
+export type Media = { id: string; size?: number; type: "image" | "audio" | "pdf"; mime: string };
+export type Doc = { id: string; size?: number; ext: string; name: string };
+type TreeItem = { path: string; type: string; size: number };
+
+export async function file(id: string, size: number | undefined, max = 7000000) {
   if (size && size > max) throw Error("FILE_LARGE");
   const meta = await tg("getFile", { file_id: id });
   if (!meta.file_path || meta.file_size > max) throw Error("FILE_LARGE");
@@ -17,14 +22,25 @@ export async function file(id, size, max = 7000000) {
   return a;
 }
 
-export function base64(bytes) {
-  const a = [];
+export function base64(bytes: Uint8Array) {
+  const a: string[] = [];
   for (let i = 0; i < bytes.length; i += 32768)
     a.push(String.fromCharCode(...bytes.subarray(i, i + 32768)));
   return btoa(a.join(""));
 }
 
-export function media(m) {
+const isPdf = (d: TgFile | null | undefined): d is TgFile =>
+  !!d && (d.mime_type === "application/pdf" || /\.pdf$/i.test(d.file_name || ""));
+
+/** Photos, voice/audio and PDFs are sent to Gemini natively as inline data. */
+export function media(m: Pick<TgMessage, "photo" | "voice" | "audio" | "document">): Media | null {
+  if (isPdf(m.document))
+    return {
+      id: m.document.file_id,
+      size: m.document.file_size,
+      type: "pdf",
+      mime: "application/pdf",
+    };
   const p = m.photo?.at(-1);
   if (p)
     return {
@@ -44,10 +60,10 @@ export function media(m) {
   return null;
 }
 
-export function doc(m) {
+export function doc(m: Pick<TgMessage, "document">): Doc | null {
   const d = m.document;
   if (!d) return null;
-  const ext = (d.file_name || "").split(".").at(-1)?.toLowerCase();
+  const ext = (d.file_name || "").split(".").at(-1)?.toLowerCase() || "";
   return ["docx", "xlsx", "md", "markdown", "txt", "csv"].includes(ext)
     ? {
         id: d.file_id,
@@ -58,18 +74,18 @@ export function doc(m) {
     : null;
 }
 
-const decode = (s) =>
+const decode = (s: string) =>
   s.replace(
     /&#x([0-9a-f]+);|&#([0-9]+);|&(amp|lt|gt|quot|apos);/gi,
-    (_, h, n, k) =>
+    (_: string, h: string, n: string, k: string) =>
       h || n
         ? String.fromCodePoint(parseInt(h || n, h ? 16 : 10))
-        : { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[
+        : ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as Record<string, string>)[
             k.toLowerCase()
           ] || "",
   );
 
-export function parseDoc(bytes, ext) {
+export function parseDoc(bytes: Uint8Array, ext: string) {
   if (bytes.length > 5000000) throw Error("FILE_LARGE");
   const reader = new TextDecoder("utf-8");
   if (["md", "markdown", "txt", "csv"].includes(ext)) {
@@ -134,7 +150,7 @@ export function parseDoc(bytes, ext) {
       .filter((x) => /^xl\/worksheets\/sheet\d+\.xml$/.test(x))
       .sort();
   if (!names.length) throw Error("BAD_DOC");
-  const lines = [];
+  const lines: string[] = [];
   let partial = names.length > 3;
   for (const name of names.slice(0, 3)) {
     const rs = [
@@ -143,7 +159,7 @@ export function parseDoc(bytes, ext) {
     if (rs.length > 65) partial = true;
     lines.push(name + " - " + rs.length + " rows");
     for (const row of rs.slice(0, 65)) {
-      const cells = [];
+      const cells: string[] = [];
       for (const c of row[1].matchAll(
         /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g,
       )) {
@@ -176,17 +192,19 @@ export function parseDoc(bytes, ext) {
   };
 }
 
-export async function repo(link) {
+export async function repo(link: string) {
   const m = /^https:\/\/github\.com\/([\w-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(
     link,
   );
   if (!m) throw Error("GH_LINK");
   const name = m[1] + "/" + m[2];
-  const api = async (path) => {
+  const api = async (path: string) => {
     const r = await fetch("https://api.github.com/" + path, {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "SaeedAI",
+        // Optional token lifts the shared-IP limit from 60 to 5000 requests/hour.
+        ...(GH ? { Authorization: "Bearer " + GH } : {}),
       },
       signal: AbortSignal.timeout(17000),
     });
@@ -202,9 +220,9 @@ export async function repo(link) {
         encodeURIComponent(meta.default_branch) +
         "?recursive=1",
     ),
-    all = (tree.tree || []).filter((x) => x.type === "blob"),
+    all: TreeItem[] = (tree.tree || []).filter((x: TreeItem) => x.type === "blob"),
     eligible = all.filter(
-      (x) =>
+      (x: TreeItem) =>
         x.size > 0 &&
         x.size < 60000 &&
         /\.(ts|tsx|js|jsx|py|dart|php|go|rs|md|json|yaml|yml|toml|css|sql|html)$|(^|\/)(README[^/]*|Dockerfile)$/i.test(
@@ -246,7 +264,7 @@ export async function repo(link) {
       Object.entries(z).map(([k, v]) => [k.split("/").slice(1).join("/"), v]),
     );
   let used = 0;
-  const snippets = [];
+  const snippets: string[] = [];
   for (const item of eligible) {
     if (snippets.length >= 120) break;
     const bytes = files.get(item.path);

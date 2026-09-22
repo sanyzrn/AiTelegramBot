@@ -1,4 +1,4 @@
-name: Deploy Saeed AI v9 to Supabase
+name: Deploy Saeed AI to Supabase
 on:
   push:
     branches: [main]
@@ -7,7 +7,9 @@ on:
       - 'supabase/functions/saeed-ai-ui/**'
       - 'supabase/functions/saeed-ai-v7/**'
       - 'supabase/functions/saeed-ai-reminders/**'
+      - 'supabase/functions/saeed-ai-webapp/**'
       - 'supabase/config.toml'
+      - 'supabase/migrations/**'
       - '.github/workflows/deploy-supabase.yml'
   workflow_dispatch:
 permissions:
@@ -36,7 +38,20 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Require complete v9 source and check every module before deploying
+      - name: Read the release and schema versions from the single source of truth
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(sed -nE 's/.*APP_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' supabase/functions/_shared/version.ts)"
+          schema="$(sed -nE 's/.*SCHEMA_VERSION = "([0-9]{14})".*/\1/p' supabase/functions/_shared/version.ts)"
+          test -n "$app" && test -n "$schema" || { echo '::error::version.ts must declare APP_VERSION and SCHEMA_VERSION'; exit 1; }
+          latest="$(ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]{14})_.*#\1#' | sort | tail -1)"
+          test "$schema" = "$latest" || { echo "::error::SCHEMA_VERSION $schema must equal the newest migration $latest"; exit 1; }
+          grep -Fq "'$schema'" "supabase/migrations/${latest}_"*.sql || { echo '::error::newest migration must set saeed_ai_schema_version()'; exit 1; }
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
+      - name: Require complete source and check every module before deploying
         shell: bash
         run: |
           set -euo pipefail
@@ -46,12 +61,11 @@ jobs:
             test -s "supabase/functions/$fn/deno.json"
             grep -Fq 'APP_VERSION' "supabase/functions/$fn/index.ts"
           done
-          grep -Fq '"9.4.0"' supabase/functions/_shared/version.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-v7/index.ts
           grep -Fq 'X-Telegram-Bot-Api-Secret-Token' supabase/functions/saeed-ai-ui/index.ts
           grep -Fq 'X-Saeed-Cron-Secret' supabase/functions/saeed-ai-reminders/index.ts
           grep -Fq 'saeed_ai_authenticate_reminder_cron' supabase/functions/saeed-ai-reminders/index.ts
-          for migration in 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql 20260921040749_saeed_ai_v91_keyboard_page_states.sql 20260921120000_saeed_ai_v93_briefing_city.sql; do
+          for migration in 20260917000000_saeed_ai_base_schema.sql 20260920090000_saeed_ai_reminders_tasks.sql 20260920205000_saeed_ai_v8_preference_states.sql 20260920205100_saeed_ai_v8_vault_cron_auth.sql 20260921040749_saeed_ai_v91_keyboard_page_states.sql 20260921120000_saeed_ai_v93_briefing_city.sql 20260922120000_saeed_ai_v10_life_upgrades.sql; do
             test -s "supabase/migrations/$migration"
           done
           for fn in saeed-ai-v7 saeed-ai-ui; do
@@ -66,8 +80,9 @@ jobs:
           fi
           deno check supabase/functions/_shared/*.ts
           deno check --config supabase/functions/saeed-ai-reminders/deno.json supabase/functions/saeed-ai-reminders/index.ts
+          deno check --config supabase/functions/saeed-ai-webapp/deno.json supabase/functions/saeed-ai-webapp/index.ts
           grep -Fq 'tasks_delete_confirm' supabase/functions/saeed-ai-v7/core/ui.ts
-          grep -Fq 'tasks_delete_confirm' supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql
+          grep -Fq 'tasks_delete_confirm' supabase/migrations/20260922120000_saeed_ai_v10_life_upgrades.sql
           for capability in 'v9_recurring: true' 'v9_briefings: true' 'v9_callback_refresh: true'; do
             grep -Fq "$capability" supabase/functions/saeed-ai-v7/index.ts
           done
@@ -79,29 +94,51 @@ jobs:
           done
           node --experimental-strip-types --test tests/*.test.mjs
           echo 'PASS: every entrypoint and module typechecked without suppressions, all tests passing'
+      - name: Refuse to deploy onto a database that lacks the required migrations
+        shell: bash
+        env:
+          SCHEMA: ${{ steps.version.outputs.schema }}
+        run: |
+          set -euo pipefail
+          # Migrations are applied separately; deploying code ahead of its schema
+          # would break every new feature at runtime. Checked via the Management API.
+          status="$(curl --silent --show-error --output response.json --write-out '%{http_code}' \
+            -X POST "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" -H 'Content-Type: application/json' \
+            --data '{"query":"select coalesce((select substring(prosrc from '"'"'[0-9]{14}'"'"') from pg_catalog.pg_proc where proname = '"'"'saeed_ai_schema_version'"'"' and pronamespace = '"'"'public'"'"'::regnamespace), '"'"'none'"'"') as v"}' || echo 000)"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "::warning::Could not verify the live schema version (HTTP $status); make sure supabase/migrations up to $SCHEMA are applied."
+            exit 0
+          fi
+          live="$(jq -r '.[0].v // empty' response.json 2>/dev/null || true)"
+          [ "$live" = "$SCHEMA" ] || { echo "::error::Live schema is '${live:-unknown}', code requires $SCHEMA. Apply supabase/migrations first."; exit 1; }
+          echo "PASS: live schema $live"
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: 2.45.5
-      - name: Deploy processor, dispatcher, then webhook gateway
+      - name: Deploy processor, dispatcher, dashboard API, then webhook gateway
         shell: bash
         run: |
           set -euo pipefail
-          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
+          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-webapp saeed-ai-ui; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api --no-verify-jwt
           done
-      - name: Verify live v9.4.0 and actual capability flags on all three
+      - name: Verify the live release and actual capability flags on every function
         shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app }}
         run: |
           set -euo pipefail
           base="https://${PROJECT_REF}.supabase.co/functions/v1"
-          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-ui; do
+          for fn in saeed-ai-v7 saeed-ai-reminders saeed-ai-webapp saeed-ai-ui; do
             payload="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 "$base/$fn?health=$(date +%s)")"
-            printf '%s' "$payload" | jq -e '.configured == true and .version == "9.4.0"' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
+            printf '%s' "$payload" | jq -e --arg v "$APP_VERSION" '.configured == true and .version == $v' >/dev/null || { echo "::error::Live release mismatch: $fn"; exit 1; }
             case "$fn" in
-              saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true' >/dev/null ;;
-              saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true' >/dev/null ;;
-              saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v9_market_weather == true and .v93_city_voice == true' >/dev/null ;;
+              saeed-ai-v7) printf '%s' "$payload" | jq -e '.v9_recurring == true and .v9_briefings == true and .v9_callback_refresh == true and .v10_shared_engine == true and .v10_receipts == true' >/dev/null ;;
+              saeed-ai-ui) printf '%s' "$payload" | jq -e '.v9_auto_tool_routing == true and .v9_callback_fast_ack == true and .v10_rate_limit == true' >/dev/null ;;
+              saeed-ai-webapp) printf '%s' "$payload" | jq -e '.v10_webapp == true' >/dev/null ;;
+              saeed-ai-reminders) printf '%s' "$payload" | jq -e '.scheduled_reminders == true and .v9_recurring == true and .v9_briefings == true and .v93_city_voice == true and .v10_watchers == true' >/dev/null ;;
             esac
-            echo "PASS: live $fn v9.4.0 and capabilities"
+            echo "PASS: live $fn $APP_VERSION and capabilities"
           done

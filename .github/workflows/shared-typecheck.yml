@@ -32,16 +32,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          deno check \
-            supabase/functions/_shared/briefing-sources.ts \
-            supabase/functions/_shared/calculator.ts \
-            supabase/functions/_shared/repeat.ts \
-            supabase/functions/_shared/timer.ts \
-            supabase/functions/_shared/voice-intent.ts \
-            supabase/functions/_shared/tool-intent.ts \
-            supabase/functions/_shared/intent-model.ts \
-            supabase/functions/_shared/life.ts \
-            supabase/functions/_shared/web-search.ts \
-            supabase/functions/_shared/morning-voice.ts \
-            supabase/functions/_shared/version.ts
+          # Every shared module, including the dispatcher, TTS and life modules.
+          deno check supabase/functions/_shared/*.ts
           echo 'PASS: extracted modules typecheck without ts-nocheck'

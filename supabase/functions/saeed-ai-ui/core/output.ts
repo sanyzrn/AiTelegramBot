@@ -1,10 +1,11 @@
-/** Saeed AI saeed-ai-ui output module. Source moved without behavioral rewrites. */
-import { send, tg } from "./transport.ts";
+/** Saeed AI saeed-ai-ui output module: answer post-processing and delivery. */
+import { tg } from "./transport.ts";
+import { escapeHtml } from "../../_shared/format.ts";
+import { sendRich } from "../../_shared/telegram.ts";
 
-export const esc = (s) =>
-  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const esc = escapeHtml;
 
-export function stripRepeatedIntro(text, asked) {
+export function stripRepeatedIntro(text: string, asked: boolean) {
   if (asked) return text;
   return (
     String(text)
@@ -16,8 +17,11 @@ export function stripRepeatedIntro(text, asked) {
   );
 }
 
-export async function deliver(chat, answer, tool, prompt) {
-  const sections = [],
+/** Fenced code becomes copyable <pre> blocks; prose is rendered from Markdown. */
+type Section = { type: "text" | "code"; value: string; language?: string };
+
+export async function deliver(chat: number, answer: string, tool: string, prompt: string) {
+  const sections: Section[] = [],
     rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g;
   let offset = 0,
     m;
@@ -33,7 +37,7 @@ export async function deliver(chat, answer, tool, prompt) {
     if (tail) sections.push({ type: "text", value: tail });
   } else if (tool === "summarize" || /خلاصه|summari[sz]e/i.test(prompt)) {
     const lines = answer.split("\n"),
-      idx = lines.findIndex((x) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x));
+      idx = lines.findIndex((x: string) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x));
     if (idx > 0) {
       if (lines.slice(0, idx).join("\n").trim())
         sections.push({
@@ -50,12 +54,12 @@ export async function deliver(chat, answer, tool, prompt) {
   else sections.push({ type: "text", value: answer });
   for (const part of sections) {
     if (part.type === "text") {
-      await send(chat, part.value);
+      await sendRich(tg, chat, part.value);
       continue;
     }
     const chars = Array.from(part.value),
       lang = /^[A-Za-z0-9_+#-]{1,25}$/.test(part.language || "")
-        ? part.language.toLowerCase()
+        ? String(part.language).toLowerCase()
         : "";
     for (let i = 0; i < chars.length; i += 2500) {
       const data = esc(chars.slice(i, i + 2500).join("")),

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderTasks, handleLifeMessage } from '../supabase/functions/_shared/life.ts';
+import { fakeDb, fakeCtx } from './helpers/fake-db.mjs';
+import { generate } from '../supabase/functions/_shared/ai.ts';
 
 const root = resolve('supabase/functions');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
@@ -49,18 +51,13 @@ async function handleLifeCallbackSafe(c, id, chat, cb, messageId) {
 }
 
 test('shopping add reports only genuinely new items', async () => {
-  const messages = [];
-  const mk = (added) => ({
-    db: { from() { return { upsert() { return this; }, select() { return Promise.resolve({ data: added, error: null }); } }; } },
-    tg: async () => { throw Error('no telegram calls expected'); },
-    send: async (_, text) => messages.push(text),
-  });
-  const fresh = mk([{ id: 1 }, { id: 2 }]);
-  await handleLifeMessage(fresh, 123, 123, 'به لیست خرید اضافه کن شیر، نان', 10);
-  assert.match(messages[0], /۲ قلم/);
-  const dupes = mk([]);
-  await handleLifeMessage(dupes, 123, 123, 'به لیست خرید اضافه کن شیر، نان', 11);
-  assert.match(messages[1], /قبلاً توی لیست خرید بودن/);
+  const db = fakeDb();
+  const { c, sent } = fakeCtx(db);
+  await handleLifeMessage(c, 123, 123, 'به لیست خرید اضافه کن شیر، نان', 10);
+  assert.match(sent[0].text, /۲ قلم/);
+  await handleLifeMessage(c, 123, 123, 'به لیست خرید اضافه کن شیر، نان', 11);
+  assert.match(sent[1].text, /قبلاً توی لیست خرید بودن/);
+  assert.equal(db.rows('saeed_ai_shopping').length, 2);
 });
 
 test('voice submission honors a voice-capable tool chosen from the keyboard', () => {
@@ -90,12 +87,26 @@ test('processor web tool uses the shared grounded search with sources', () => {
   assert.match(wrapper, /_shared\/web-search\.ts/, 'gateway must delegate to the shared module');
 });
 
-test('regular Gemini chat enables google_search so live questions are not offline', () => {
+test('regular Gemini chat enables google_search and shows grounded sources', async () => {
+  const bodies = [];
+  const fetcher = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: 'نرخ امروز **۸۵ هزار** است.' }] },
+        groundingMetadata: { groundingChunks: [{ web: { uri: 'https://example.com/a', title: 'منبع الف' } }] } }],
+    }));
+  };
+  const cfg = { provider: 'gemini', gemini: 'gemini-3.5-flash-lite', openrouter: 'x/y', search: 'gemini-3.5-flash' };
+  const r = await generate(cfg, { gemini: 'k' }, [{ role: 'user', parts: [{ text: 'قیمت دلار' }] }], 'sys', { search: true, fetcher });
+  assert.deepEqual(bodies[0].tools, [{ google_search: {} }]);
+  assert.equal(r.model, 'gemini-3.5-flash', 'lite models are swapped for a grounding-capable model');
+  assert.match(r.text, /📚 منابع:[\s\S]*https:\/\/example\.com\/a/);
+  await generate(cfg, { gemini: 'k' }, [{ role: 'user', parts: [{ text: 'سلام' }] }], 'sys', { search: false, fetcher });
+  assert.equal(bodies[1].tools, undefined, 'search can be switched off by the admin');
   const conversation = read('saeed-ai-ui/core/conversation.ts');
-  assert.match(conversation, /google_search/);
-  const model = read('saeed-ai-v7/core/model.ts');
-  assert.match(model, /google_search/);
-  assert.match(model, /opts\.search|search:/);
+  assert.match(conversation, /search: s\.provider === "gemini" && s\.chatSearch/);
+  const work = read('saeed-ai-v7/core/work.ts');
+  assert.match(work, /s\.chatSearch/);
 });
 
 test('numeric task completion accepts Persian digits', () => {

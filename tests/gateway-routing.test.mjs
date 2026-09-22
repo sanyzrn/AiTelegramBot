@@ -1,97 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { MENU, TOOLS, DASHBOARD_BUTTON } from '../supabase/functions/_shared/menu.ts';
+import { mustForward, forwardsPendingTool } from '../supabase/functions/_shared/gateway-route.ts';
 import { resolve } from 'node:path';
 
 const root = resolve('supabase/functions');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
-const menuSource = read('saeed-ai-v7/core/menu.ts');
-const gatewayMenus = read('saeed-ai-ui/core/config.ts');
 const gateway = read('saeed-ai-ui/index.ts');
 const processor = read('saeed-ai-v7/index.ts');
 const dispatcher = read('saeed-ai-reminders/index.ts');
 
-function menuButtons(source) {
-  const start = source.indexOf('export const MENU = {');
-  const end = source.indexOf('\n};', start);
-  assert.ok(start > 0 && end > start, 'MENU block not found in menu.ts');
-  const body = source.slice(start, end);
-  const buttons = [];
-  for (const m of body.matchAll(/\["([^"]+)"(?:,\s*"([^"]+)")?\]/g)) {
-    buttons.push(m[1]);
-    if (m[2]) buttons.push(m[2]);
-  }
-  assert.ok(buttons.length >= 40, 'MENU buttons unexpectedly shrank');
-  return buttons;
-}
-
-function gatewayMenuSet(source) {
-  const start = source.indexOf('export const MENUS = new Set([');
-  const end = source.indexOf(']);', start);
-  assert.ok(start > 0 && end > start, 'MENUS set not found in gateway config');
-  return new Set([...source.slice(start, end).matchAll(/"([^"]+)"/g)].map((m) => m[1]));
-}
-
-function toolsKeys(source) {
-  const start = source.indexOf('TOOLS = {');
-  const end = source.indexOf('};', start);
-  assert.ok(start > 0 && end > start, 'TOOLS block not found in menu.ts');
-  return [...source.slice(start, end).matchAll(/(\w+):\s*"/g)].map((m) => m[1]);
-}
-
 test('every reply-keyboard button is routable by the gateway or is a slash command', () => {
-  const menus = gatewayMenuSet(gatewayMenus);
-  const unroutable = menuButtons(menuSource).filter(
-    (label) => !menus.has(label) && !label.startsWith('/'),
-  );
-  assert.deepEqual(
-    unroutable,
-    [],
-    `Gateway MENUS never forwards these keyboard buttons, so they leak into AI chat: ${unroutable.join(' | ')}`,
-  );
+  const unroutable = Object.values(MENU).flat(2).filter((label) => !mustForward({ text: label }));
+  assert.deepEqual(unroutable, [], `Gateway never forwards these keyboard buttons, so they leak into AI chat: ${unroutable.join(' | ')}`);
+  assert.ok(mustForward({ text: '🛡 مدیریت' }), 'admin-only settings button is routable');
+  assert.ok(mustForward({ text: DASHBOARD_BUTTON }));
 });
 
 test('the gateway forwards every processor-side pending_tool (no dead keyboard buttons)', () => {
-  const forwardBlock = gateway.match(/\[([^\]]*?)\]\.includes\(p\?\.pending_tool\)/s);
-  assert.ok(forwardBlock, 'gateway pending_tool forward list not found');
-  const forwarded = new Set(
-    [...forwardBlock[1].matchAll(/"(\w+)"/g)].map((m) => m[1]),
-  );
-  // "chat" is the default and "web" is handled by the gateway search path itself.
-  const mustForward = toolsKeys(menuSource).filter((k) => !['chat', 'web'].includes(k));
-  const missing = mustForward.filter((k) => !forwarded.has(k));
-  assert.deepEqual(
-    missing,
-    [],
-    `Tools keyboard sets pending_tool but gateway never forwards it to the processor: ${missing.join(', ')}`,
-  );
+  const missing = Object.keys(TOOLS).filter((k) => !['chat', 'web'].includes(k) && !forwardsPendingTool(k));
+  assert.deepEqual(missing, [], `Tools keyboard sets pending_tool but gateway never forwards it: ${missing.join(', ')}`);
+  assert.equal(forwardsPendingTool('chat'), false);
+  assert.equal(forwardsPendingTool('web'), false, 'online search is answered by the gateway itself');
+  assert.equal(forwardsPendingTool(undefined), false);
 });
 
-test('keyboard_page CHECK constraint accepts the tasks delete confirmation page', () => {
-  const ui = read('saeed-ai-v7/core/ui.ts');
-  assert.match(ui, /tasks_delete_confirm/, 'ui.ts must route the confirmation page');
-  const migration = readFileSync(
-    resolve('supabase/migrations/20260921040749_saeed_ai_v91_keyboard_page_states.sql'),
-    'utf8',
-  );
-  assert.match(
-    migration,
-    /'tasks_delete_confirm'/,
-    'keyboard_page CHECK constraint must accept tasks_delete_confirm or show() fails at runtime',
-  );
+test('media, slash commands, voice replies and typed life commands reach the processor', () => {
+  assert.ok(mustForward({ text: '/start' }));
+  assert.ok(mustForward({ photo: [{}] }));
+  assert.ok(mustForward({ document: {} }));
+  assert.ok(mustForward({ text: 'تایپش کن', reply_to_message: { voice: {} } }));
+  for (const t of ['صبح‌نامه تست', 'یادت باشه من گیاه‌خوارم', 'حافظه‌هام', 'یادآورهام', 'هشدارهام',
+    'وقتی دلار از ۹۵ هزار تومن رد شد خبرم کن', 'خلاصه هفته', 'پومودورو', 'منطقه زمانی', 'بخونش', 'خروجی کامل',
+    'لیست خرید', 'اشتراک لیست خرید', 'عضو لیست خرید ۱۲۳۴۵۶', 'حذف آخرین خرج', 'صبح‌نامه ساعت ۸'])
+    assert.ok(mustForward({ text: t }), `${t} must be forwarded`);
+  assert.ok(mustForward({ text: 'ترجمه', reply_to_message: { text: 'hello' } }), 'reply-translate shortcut');
+  assert.equal(mustForward({ text: 'ترجمه' }), false, 'a bare word without a replied text stays chat');
+  for (const t of ['سلام', 'حال شما چطوره؟', 'یه شعر بگو']) assert.equal(mustForward({ text: t }), false, `${t} stays in gateway chat`);
 });
 
-test('webhook setup endpoint requires the derived webhook secret', () => {
-  const setupAt = gateway.indexOf('searchParams.has("setup")');
-  const setWebhookAt = gateway.indexOf('setWebhook');
-  assert.ok(setupAt > 0 && setWebhookAt > setupAt, 'setup endpoint moved');
-  const guardZone = gateway.slice(setupAt, setWebhookAt);
-  assert.match(
-    guardZone,
-    /X-Telegram-Bot-Api-Secret-Token/,
-    'unauthenticated callers must not be able to re-register the webhook',
-  );
-  assert.match(guardZone, /equal\(/, 'secret comparison must be constant-time');
+test('every menu page is accepted by the keyboard_page CHECK of the latest migration', () => {
+  const migrations = readdirSync(resolve('supabase/migrations')).filter((f) => f.endsWith('.sql')).sort();
+  let allowed = null;
+  for (const f of migrations) {
+    const sql = readFileSync(resolve('supabase/migrations', f), 'utf8');
+    for (const m of sql.matchAll(/keyboard_page_check\s+CHECK\s*\(\s*keyboard_page\s+IN\s*\(([^)]*)\)/gi))
+      allowed = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  }
+  assert.ok(allowed, 'keyboard_page CHECK constraint not found in migrations');
+  const missing = Object.keys(MENU).filter((page) => !allowed.has(page));
+  assert.deepEqual(missing, [], `show() would fail at runtime for pages: ${missing.join(', ')}`);
+});
+
+test('pending_tool CHECK accepts every tool the keyboard can select', () => {
+  const migrations = readdirSync(resolve('supabase/migrations')).filter((f) => f.endsWith('.sql')).sort();
+  let allowed = null;
+  for (const f of migrations) {
+    const sql = readFileSync(resolve('supabase/migrations', f), 'utf8');
+    for (const m of sql.matchAll(/pending_tool_check\s+CHECK\s*\(\s*pending_tool\s+IN\s*\(([^)]*)\)/gi))
+      allowed = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  }
+  assert.ok(allowed, 'pending_tool CHECK constraint not found in migrations');
+  const missing = Object.keys(TOOLS).filter((k) => !allowed.has(k));
+  assert.deepEqual(missing, []);
+});
+
+test('webhook setup and diagnostics require the derived webhook secret', () => {
+  const guard = gateway.match(/const secretOk = async \(\) =>([^\n]+)/);
+  assert.ok(guard, 'secretOk guard missing');
+  assert.match(guard[1], /X-Telegram-Bot-Api-Secret-Token/);
+  assert.match(guard[1], /equal\(/, 'secret comparison must be constant-time');
+  for (const endpoint of ['"setup"', '"selftest"']) {
+    const at = gateway.indexOf(`searchParams.has(${endpoint})`);
+    assert.ok(at > 0, `${endpoint} endpoint moved`);
+    assert.match(gateway.slice(at, at + 200), /secretOk\(\)/, `${endpoint} must be authenticated`);
+  }
+  const processorSelftest = processor.indexOf('searchParams.has("selftest")');
+  assert.match(processor.slice(processorSelftest, processorSelftest + 300), /equal\(/, 'processor selftest must be authenticated');
 });
 
 test('release version has a single source of truth used by all three functions', () => {
@@ -107,6 +93,6 @@ test('release version has a single source of truth used by all three functions',
     );
   }
   const deploy = readFileSync(resolve('.github/workflows/deploy-supabase.yml'), 'utf8');
-  assert.match(deploy, new RegExp(declared[1].replace(/\./g, '\\.')));
-  assert.match(deploy, /APP_VERSION/, 'deploy workflow must check the shared version import');
+  assert.match(deploy, /APP_VERSION/, 'deploy workflow must read the shared version');
+  assert.doesNotMatch(deploy, /\d+\.\d+\.\d+"/, 'deploy workflow must not hardcode a release number');
 });

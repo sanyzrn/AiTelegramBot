@@ -1,28 +1,33 @@
-/** Saeed AI saeed-ai-v7 index module. Source moved without behavioral rewrites. */
+/** Saeed AI saeed-ai-v7 index module: authenticated processor entrypoint and routing. */
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
+import { EXPORT_ALL, REPLY_TRANSLATE, SPEAK } from "../_shared/life-commands.ts";
 import { calculateExact } from "../_shared/calculator.ts";
 import { parseTimerRequest, normalizeTimerDigits } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
-import { GK, admin, db, ready, reply } from "./core/state.ts";
-import { adminInput, allowed, cfg, exportMd, pref, save, stats } from "./core/admin.ts";
-import { retry, startWork } from "./core/work.ts";
+import { GK, WEBAPP_URL, admin, db, ready, reply } from "./core/state.ts";
+import { adminInput, allowed, cfg, exportAll, exportMd, pref, save, stats } from "./core/admin.ts";
+import { charge, retry, speak, startWork } from "./core/work.ts";
 import { chooseVoice, handleVoiceReply, voiceAction } from "./core/voice.ts";
 import { MENU, TOOLS, keyboard, navigate, rows, show } from "./core/ui.ts";
-import { doneTask, profile, saveTasks, scheduleRealTimer, setReminder, sweep } from "./core/life.ts";
+import { doneTask, profile, saveTasks, scheduleRealTimer, setReminder } from "./core/life.ts";
 import { doc, media } from "./core/media.ts";
+import type { TgMessage, TgUpdate } from "../_shared/telegram.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
-async function callbacks(c, update) {
+const RECEIPT_CAPTION = /(?:رسید|فاکتور|فیش|خرج|receipt|invoice)/iu;
+
+const life = (from?: TgMessage["from"]) => ({ db, tg, send, actorName: [from?.first_name, from?.last_name].filter(Boolean).join(" ").slice(0, 60) });
+
+async function callbacks(c: NonNullable<TgUpdate["callback_query"]>, update: number) {
+  if (!c.message) return;
   const id = c.from.id,
     chat = c.message.chat.id,
     a = c.data || "";
-  try {
-    await tg("answerCallbackQuery", { callback_query_id: c.id });
-  } catch {}
+  // The gateway already answered the callback query; a second answer always fails.
   // Keep life-action buttons until the original list is edited with fresh state.
-  if (await handleLifeCallback({ db, tg, send }, id, chat, a, c.message.message_id)) return;
+  if (await handleLifeCallback(life(c.from), id, chat, a, c.message.message_id)) return;
   try {
     await tg("editMessageReplyMarkup", {
       chat_id: chat,
@@ -37,7 +42,7 @@ async function callbacks(c, update) {
     return voiceAction(id, chat, act, update);
   }
   if (a === "v6:stats") return stats(id, chat);
-  const maps = {
+  const maps: Record<string, string> = {
     "nav:home": "home",
     "nav:tools": "tools",
     "nav:settings": "settings",
@@ -64,19 +69,18 @@ async function callbacks(c, update) {
   return show(id, chat, "home");
 }
 
-
-async function message(m, update) {
+async function message(m: TgMessage, update: number) {
   const id = m.from.id,
     chat = m.chat.id,
     text = (m.text || "").trim(),
     p = await pref(id);
-  await sweep();
   if (await handleVoiceReply(m, update)) return;
   if (/^\/(start|menu|help)(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "chat" });
     return show(id, chat, "home");
   }
   if (/^\/tools(?:@\w+)?$/.test(text)) return show(id, chat, "tools");
+  if (/^\/(?:life|today)(?:@\w+)?$/.test(text)) return show(id, chat, "life");
   if (/^\/settings(?:@\w+)?$/.test(text)) return show(id, chat, "settings");
   if (/^\/admin(?:@\w+)?$/.test(text))
     return admin(id)
@@ -88,6 +92,7 @@ async function message(m, update) {
         ? stats(id, chat)
         : show(id, chat, "models")
       : send(chat, "🔒 این بخش مخصوص مدیر باته. 😉");
+  if (EXPORT_ALL.test(text)) return exportAll(id, chat);
   if (/^\/md(?:@\w+)?$/.test(text)) return exportMd(id, chat);
   if (/^\/profile(?:@\w+)?$/.test(text)) return profile(id, chat);
   if (/^\/repo(?:@\w+)?$/.test(text)) {
@@ -102,10 +107,20 @@ async function message(m, update) {
     await save(id, { pending_tool: "web" });
     return show(id, chat, "tools");
   }
+  if (/^\/receipt(?:@\w+)?$/.test(text)) {
+    await save(id, { pending_tool: "receipt" });
+    return send(chat, "🧾 عکس رسید یا فاکتور رو بفرست؛ مبلغش رو می‌خونم و قبل از ثبت ازت تأیید می‌گیرم.");
+  }
+  if (/^\/dashboard(?:@\w+)?$/.test(text))
+    return send(chat, WEBAPP_URL ? "📊 داشبورد از دکمه‌ی «📊 داشبورد» صفحه‌ی خانه باز می‌شه." : "📊 داشبورد هنوز توسط مدیر فعال نشده.", "home", id);
   if (/^\/cancel(?:@\w+)?$/.test(text))
     return navigate(id, chat, "❌ انصراف", p);
   if (/^\/reset(?:@\w+)?$/.test(text)) return show(id, chat, "reset");
   if (/^\/retry(?:\s|@|$)/.test(text)) return retry(id, chat, update);
+  if (SPEAK.test(text)) {
+    const replied = m.reply_to_message;
+    return speak(id, chat, update, replied?.from?.is_bot ? replied.text || replied.caption || "" : "");
+  }
   if (
     /^\/(transcribe|voice_summary|voice_translate|voice_execute|voice_tasks)(?:\s|@|$)/.test(
       text,
@@ -114,22 +129,22 @@ async function message(m, update) {
     const key = text.match(
         /^\/(transcribe|voice_summary|voice_translate|voice_execute|voice_tasks)/,
       )?.[1],
-      act = {
+      act = ({
         transcribe: "transcribe",
         voice_summary: "summarize",
         voice_translate: "translate",
         voice_execute: "execute",
         voice_tasks: "execute",
-      }[key];
+      } as Record<string, string>)[key || "transcribe"];
     return voiceAction(id, chat, act, update);
   }
-  const funTap = {
+  const funTap = ({
     "🔮 طالع": "horoscope",
     "🧠 تست هوش": "trivia",
     "📖 داستان": "story",
     "😂 جوک": "joke",
     "🔥 روست": "roast",
-  }[text];
+  } as Record<string, string>)[text];
   if (funTap) return startWork(m, update, funTap, "", null);
   if (await navigate(id, chat, text, p)) return;
   // Persian-digit input is the norm here; «انجام شد ۳» must work like «انجام شد 3».
@@ -139,9 +154,14 @@ async function message(m, update) {
     const timer = parseTimerRequest(text);
     if (timer) return scheduleRealTimer(id, chat, timer, update);
     if (/(?:تایمر|زمان[‌\s-]*سنج|timer)/iu.test(text)) return send(chat, "⏰ مدت تایمر رو واضح بگو؛ مثلاً «تایمر ۷ دقیقه بذار». تایمرِ بدون مدت ثبت نمی‌کنم.");
+    if (!(await charge(id, chat, update))) return;
     return setReminder(id, chat, text, update);
   }
-  if (p.pending_tool === "tasks" && text) return saveTasks(id, chat, text, update);
+  if (p.pending_tool === "tasks" && text) {
+    if (await handleLifeMessage(life(m.from), id, chat, text, update)) return;
+    if (!(await charge(id, chat, update))) return;
+    return saveTasks(id, chat, text, update);
+  }
   if (await adminInput(id, chat, text)) return;
   const directTimer = parseTimerRequest(text);
   if (directTimer) return scheduleRealTimer(id, chat, directTimer, update);
@@ -149,24 +169,35 @@ async function message(m, update) {
       /(?:بذار|بگذار|بزن|تنظیم\s*کن|ست\s*کن|شروع\s*کن|set|start)/iu.test(text) &&
       !/(?:چرا|چطور|کار\s*نمی[‌\s]*کن|\?|؟)/iu.test(text))
     return send(chat, "⏰ مدت تایمر رو دقیق بگو؛ مثلاً «تایمر ۷ دقیقه بذار». چیزی ثبت نکردم.");
-  if (await handleLifeMessage({ db, tg, send }, id, chat, (m.caption || text).trim(), update)) return;
+  // Photos of receipts go to the receipt tool (explicitly chosen or captioned).
+  if (m.photo && (p.pending_tool === "receipt" || RECEIPT_CAPTION.test(m.caption || "")))
+    return startWork(m, update, "receipt", (m.caption || "").trim(), null);
+  if (!m.photo && !m.document && await handleLifeMessage(life(m.from), id, chat, (m.caption || text).trim(), update)) return;
   const exact = calculateExact(text);
   if (exact) return send(chat, exact);
+  // Reply-translate shortcut: «ترجمه» on any replied text.
+  if (REPLY_TRANSLATE.test(text) && (m.reply_to_message?.text || m.reply_to_message?.caption))
+    return startWork(m, update, "translate", "این متن را ترجمه کن.", null);
   // A gateway-selected intent is validated against this local allowlist.
   const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing"]);
   const requestText = (m.caption || text).trim();
-  const inferred = p.pending_tool === "chat" && requestText
-    ? safeTools.has(m.saeed_auto_tool)
+  const inferred: string = p.pending_tool === "chat" && requestText
+    ? m.saeed_auto_tool && safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
       : await selectToolIntent(requestText, GK, (await cfg()).gemini)
     : "chat";
   if (inferred === "remind") {
     const timer = parseTimerRequest(requestText);
-    return timer ? scheduleRealTimer(id, chat, timer, update) : setReminder(id, chat, requestText, update);
+    if (timer) return scheduleRealTimer(id, chat, timer, update);
+    if (!(await charge(id, chat, update))) return;
+    return setReminder(id, chat, requestText, update);
   }
-  if (inferred === "tasks") return saveTasks(id, chat, requestText, update);
+  if (inferred === "tasks") {
+    if (!(await charge(id, chat, update))) return;
+    return saveTasks(id, chat, requestText, update);
+  }
   if (["expenses", "shopping", "briefing"].includes(inferred)) {
-    if (await handleLifeMessage({ db, tg, send }, id, chat, requestText, update)) return;
+    if (await handleLifeMessage(life(m.from), id, chat, requestText, update)) return;
     return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ برای گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
   }
   if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
@@ -181,19 +212,21 @@ async function message(m, update) {
     isRepo = /^https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?$/.test(
       input,
     ),
-    tool = d
+    tool = d || med?.type === "pdf"
       ? "documents"
       : inferred !== "chat"
         ? inferred
         : p.pending_tool === "chat" && isRepo
           ? "repo"
           : p.pending_tool;
-  if (m.document && !d)
-    return send(chat, "📎 فعلاً DOCX، XLSX، MD، TXT و CSV رو می‌خونم. 😁");
-  if (tool === "documents" && !d)
+  if (m.document && !d && med?.type !== "pdf")
+    return send(chat, "📎 فعلاً PDF، DOCX، XLSX، MD، TXT و CSV رو می‌خونم. 😁");
+  if (tool === "documents" && !d && med?.type !== "pdf")
     return send(chat, "📄 فایل موردنظر رو بفرست.");
   if (tool === "repo" && !isRepo)
     return send(chat, "💻 لینک اصلی مخزن عمومی GitHub رو بفرست.");
+  if (tool === "receipt" && !m.photo)
+    return send(chat, "🧾 عکس رسید یا فاکتور رو بفرست تا مبلغش رو بخونم.");
   if (!input && !med && !d)
     return send(chat, "😊 پیام یا فایل موردنظر رو بفرست.");
   await startWork(m, update, tool, input, null);
@@ -224,8 +257,20 @@ Deno.serve(async (req) => {
       documents: true,
       voice: true,
       github: true,
+      v10_shared_engine: true,
+      v10_rich_text: true,
+      v10_pdf: true,
+      v10_receipts: true,
+      v10_memories: true,
+      v10_watchers: true,
+      v10_shared_shopping: true,
+      v10_voice_out: true,
+      v10_timezones: true,
     });
-  if (req.method === "GET" && url.searchParams.has("selftest"))
+  // Diagnostics are privileged: they require the same secret as Telegram updates.
+  if (req.method === "GET" && url.searchParams.has("selftest")) {
+    if (!ready() || !equal(req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "", await hook()))
+      return reply({ ok: false }, 401);
     return reply({
       version: APP_VERSION,
       fun_menu:
@@ -238,7 +283,8 @@ Deno.serve(async (req) => {
         (page) => !!keyboard(page, false).keyboard,
       ),
       home_buttons: rows("home", false).flat(),
-      home_minimal: rows("home", false).flat().length === 3,
+      home_minimal: rows("home", false).flat().length === 4,
+      life_page: rows("life", false).flat().includes("🛒 لیست خرید"),
       github_in_tools: rows("tools", false).flat().includes("💻 GitHub"),
       tone_in_settings: rows("settings", false).flat().includes("🎭 لحن"),
       md_in_tools: rows("tools", false).flat().includes("📄 خروجی MD"),
@@ -250,16 +296,10 @@ Deno.serve(async (req) => {
         rows("voice", false)
           .flat()
           .filter((x) => x.startsWith("/")).length === 4,
-      voice_execute_present: rows("voice", false)
-        .flat()
-        .some(
-          (x) => x.startsWith("/voice_execute") && x.includes("انجام درخواست"),
-        ),
-      voice_tasks_removed: !rows("voice", false)
-        .flat()
-        .some((x) => x.startsWith("/voice_tasks")),
+      dashboard_configured: !!WEBAPP_URL,
       no_inline_markup: true,
     });
+  }
   if (req.method !== "POST") return new Response("Not found", { status: 404 });
   if (!ready()) return new Response("Unavailable", { status: 503 });
   if (

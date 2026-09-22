@@ -107,3 +107,40 @@
 | P2 | rate limit دقیقه‌ای، کسر quota برای مسیرهای LLM جانبی، retry تلگرام | متوسط |
 | P2 | دستورهای `send_hour`، حذف هزینه، لیست یادآورها | کم |
 | P3 | ارتقاهای خلاقانه‌ی ۱ تا ۷ | متوسط تا زیاد |
+
+---
+
+## ۵. وضعیت اعمال (نسخه‌ی 10.0.0)
+
+همه‌ی موارد این گزارش روی برنچ `claude/project-review-report-gvdbqa` اعمال شده‌اند. کنار هر مورد، محل اصلی تغییر و تستی که آن را قفل می‌کند آمده است.
+
+### باگ‌ها
+| # | وضعیت | محل تغییر | تست |
+|---|-------|-----------|-----|
+| B1 | ✅ | `_shared/timer.ts` (جمع همه‌ی بخش‌های مدت، ثانیه، ربع) | `tests/timer.test.mjs` |
+| B2 | ✅ | `_shared/life-shopping.ts` (مرتب‌سازی، 🗑، پاک‌کردن خریده‌شده‌ها) | `tests/inline-refresh.test.mjs` |
+| B3 | ✅ | ستون `done_at` + `_shared/sweep.ts` | `tests/dispatch.test.mjs` |
+| B4 | ✅ | `_shared/history.ts` در هر دو موتور | `tests/v10-core.test.mjs` |
+| B5 | ✅ | `saeed-ai-v7/core/work.ts` (حذف DELETE سراسری retry) | — |
+| B6 | ✅ | `_shared/dispatch.ts` (محاسبه‌ی نوبت بعدی قبل از ارسال، ack با تلاش مجدد) | `tests/dispatch.test.mjs` |
+| B7 | ✅ | `_shared/format.ts` + `sendRich` | `tests/v10-core.test.mjs` |
+| B8 | ✅ | `_shared/life-reminders.ts` | `tests/life-v10.test.mjs` |
+| B9 | ✅ | RPC جدید `saeed_ai_claim_briefings` (LEFT JOIN) | `tests/life-v10.test.mjs`، `tests/sql/smoke.sql` |
+| B10 | ✅ | حذف ack دوم در `saeed-ai-v7/index.ts` | — |
+| B11 | ✅ | `_shared/dispatch.ts` | `tests/dispatch.test.mjs` |
+| B12 | ✅ | `durationLabel` با ارقام فارسی | `tests/timer.test.mjs` |
+
+### بهبودهای فنی
+- **عملکرد:** deadline مشترک ۴.۵ ثانیه‌ای و hint محدودتر برای کلاسیفایر؛ Search در چت منبع نشان می‌دهد و از پنل مدیر («🔎 جست‌وجوی چت») خاموش‌شدنی است؛ sweep به dispatcher منتقل شد؛ cache سی‌ثانیه‌ای config؛ `save()` جزئی؛ قیمت و هوا در هر tick یک بار گرفته می‌شوند.
+- **معماری:** همه‌ی کد تکراری به `_shared/` رفت و یک موتور چت مشترک ساخته شد. نسخه‌ها از `version.ts` خوانده می‌شوند. migration پایه (`20260917000000`) از روی production بازسازی شد. `tests/sql/check-migrations.sh` کل زنجیره را دو بار روی PostgreSQL خالی اجرا می‌کند و در CI (`migrations-check.yml`) هم اجرا می‌شود. deploy قبل از هر کاری نسخه‌ی schema را بررسی می‌کند. **هر چهار function با `strict: true` کامپایل می‌شوند.** ۴۰ تست رفتاری جدید با دیتابیس در‌حافظه (`tests/helpers/fake-db.mjs`) اضافه شد.
+- **امنیت و پایداری:** `?selftest` احراز هویت می‌خواهد؛ rate limit دقیقه‌ای (`saeed_ai_rate_hit`) اضافه شد؛ مسیرهای جانبی LLM از سهمیه کم می‌کنند؛ `tg()` با 429 و 5xx و پاسخ غیر JSON درست رفتار می‌کند؛ `GITHUB_TOKEN` اختیاری است؛ منطقه‌ی زمانی برای هر کاربر جداست (و DST رعایت می‌شود).
+- **تجربه‌ی کاربری:** ساعت صبح‌نامه، حذف هزینه، «یادآورهام»، `/md all`، خواندن PDF و صفحه‌ی «🗂 روزمره».
+
+### ارتقاها
+۱ خلاصه‌ی هفته، ۲ ثبت خرج از عکس رسید، ۳ لیست خرید مشترک، ۴ پاسخ صوتی و صبح‌نامه‌ی صوتی، ۵ هشدارهای شرطی دلار/طلا/باران، ۶ حافظه‌ی بلندمدت داوطلبانه، ۷ Mini App داشبورد. ایده‌های کوچک‌تر (چالش روز، پومودورو و ترجمه با ریپلای) هم اضافه شدند.
+
+### محدودیت‌های باقی‌مانده (صادقانه)
+- ادغام کامل کلاسیفایر با درخواست اصلی چت انجام نشد. به‌جایش deadline سخت و hint محدودتر گذاشته شد، چون ادغام کامل رفتار ابزارهای جانبی را پیچیده می‌کرد.
+- محیط staging واقعی در Supabase ساخته نشد، چون پروژه‌ی پولی جدید لازم دارد. جایگزینش اجرای کامل migrationها روی PostgreSQL در CI و گارد نسخه‌ی schema در deploy است.
+- صفحه‌ی Mini App باید روی یک هاست استاتیک HTTPS قرار بگیرد، چون Supabase Edge Functions صفحه‌ی HTML سرو نمی‌کند.
+- سناریوهای end-to-end تلگرام (ویس واقعی، TTS واقعی Gemini، رسید واقعی) فقط با ماک تست شده‌اند و باید یک بار در ربات واقعی امتحان شوند.

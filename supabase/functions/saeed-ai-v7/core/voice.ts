@@ -5,8 +5,9 @@ import { startWork } from "./work.ts";
 import { send } from "./transport.ts";
 import { show } from "./ui.ts";
 import { pref, save } from "./admin.ts";
+import type { TgMessage } from "../../_shared/telegram.ts";
 
-export async function chooseVoice(m, update) {
+export async function chooseVoice(m: TgMessage, update: number) {
   const a = m.voice || m.audio;
   if (!a) return;
   const { error } = await db.from("saeed_ai_voice_pending").upsert(
@@ -31,7 +32,7 @@ export async function chooseVoice(m, update) {
   await startWork(m, update, tool, "", null);
 }
 
-export async function voiceAction(id, chat, act, update) {
+export async function voiceAction(id: number, chat: number, act: string, update: number) {
   const { data: item, error } = await db
     .from("saeed_ai_voice_pending")
     .select("*")
@@ -69,7 +70,7 @@ export async function voiceAction(id, chat, act, update) {
   await startWork(m, update, act, "", null);
 }
 
-export async function handleVoiceReply(m, update) {
+export async function handleVoiceReply(m: TgMessage, update: number) {
   const action = voiceFollowupMode((m.text || "").trim());
   const replied = m.reply_to_message;
   if (!action || !replied?.message_id || !(replied.voice || replied.audio)) return false;
