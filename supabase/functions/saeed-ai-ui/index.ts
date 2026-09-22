@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       // The Mini App dashboard is reachable from the chat menu button when configured.
       if (WEBAPP_URL)
         await tg("setChatMenuButton", {
-          menu_button: { type: "web_app", text: "📊 داشبورد", web_app: { url: WEBAPP_URL } },
+          menu_button: { type: "web_app", text: "📊", web_app: { url: WEBAPP_URL } },
         });
       return out({ ok: true, webhook_registered: true, dashboard_menu: !!WEBAPP_URL });
     } catch (e) {
