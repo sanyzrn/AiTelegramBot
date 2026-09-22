@@ -1,9 +1,9 @@
 /** Optional, no-key daily briefing sources. Never label stale/unknown market data live. */
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 export type Weather = { line: string; source: string; updatedAt: string; values?: { temp: number; low: number; high: number; rain: number; clothing: string } };
-export type Market = { line: string; source: string; updatedAt: string };
+export type Market = { line: string; source: string; updatedAt: string; values?: { usd?: number; gold?: number } };
 /** A verified city: geocoded coordinates plus a human-readable label. */
-export type CityRef = { lat: number; lon: number; label: string };
+export type CityRef = { lat: number; lon: number; label: string; timezone?: string };
 const weatherSource = 'https://open-meteo.com/';
 const marketSource = 'https://github.com/HosseinOdd/Navasan-API';
 const rawBase = 'https://raw.githubusercontent.com/HosseinOdd/Navasan-API/main/data/';
@@ -35,7 +35,8 @@ export async function geocodeCity(name: string, fetcher: Fetcher = fetch): Promi
     const parts = [hit.name.trim(), typeof hit.admin1 === 'string' && hit.admin1.trim() ? hit.admin1.trim() : '',
       typeof hit.country === 'string' && hit.country.trim() && hit.country.trim() !== hit.name.trim() ? hit.country.trim() : '']
       .filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
-    return { lat, lon, label: parts.join('، ').slice(0, 80) };
+    const timezone = typeof hit.timezone === 'string' && hit.timezone ? hit.timezone : undefined;
+    return { lat, lon, label: parts.join('، ').slice(0, 80), ...(timezone ? { timezone } : {}) };
   } catch { return null; }
 }
 /** Clothing tip derived only from verified forecast numbers — never from a guess. */
@@ -86,16 +87,17 @@ export async function fetchIranMarket(fetcher: Fetcher = fetch, now = Date.now()
     const usdValue = Number(usd?.value), goldValue = Number(gold18?.value);
     const lines: string[] = [];
     const times: number[] = [];
+    const values: { usd?: number; gold?: number } = {};
     if (usdTime && Number.isFinite(usdValue) && Number.isInteger(usdValue) && usdValue > 1000 && usdValue < 10000000) {
-      lines.push(`💵 دلار بازار: ${fa(usdValue)} تومان`); times.push(usdTime);
+      lines.push(`💵 دلار بازار: ${fa(usdValue)} تومان`); times.push(usdTime); values.usd = usdValue;
     }
     if (goldTime && Number.isFinite(goldValue) && Number.isInteger(goldValue) && goldValue > 100000 && goldValue < 1000000000) {
-      lines.push(`🥇 هر گرم طلای ۱۸ عیار: ${fa(goldValue)} تومان`); times.push(goldTime);
+      lines.push(`🥇 هر گرم طلای ۱۸ عیار: ${fa(goldValue)} تومان`); times.push(goldTime); values.gold = goldValue;
     }
     if (!lines.length) return null;
     const oldest = Math.min(...times);
     const stamp = new Date(oldest).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran', dateStyle: 'short', timeStyle: 'short' });
-    return { line: `${lines.join('\n')}\n🕒 زمان قدیمی‌ترین نرخ: ${stamp} (تهران)؛ منبع: Navasan-API، غیررسمی و صرفاً اطلاع‌رسانی`, source: marketSource, updatedAt: new Date(oldest).toISOString() };
+    return { line: `${lines.join('\n')}\n🕒 زمان قدیمی‌ترین نرخ: ${stamp} (تهران)؛ منبع: Navasan-API، غیررسمی و صرفاً اطلاع‌رسانی`, source: marketSource, updatedAt: new Date(oldest).toISOString(), values };
   } catch { return null; }
 }
 /** Fetch independent inputs concurrently: one outage must not erase the other section. */

@@ -1,12 +1,13 @@
-/** Saeed AI saeed-ai-ui index module. Source moved without behavioral rewrites. */
+/** Saeed AI saeed-ai-ui index module: Telegram webhook gateway. */
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
-import { BASE, GK, admin, db, out, ready } from "./core/state.ts";
+import { forwardsPendingTool, mustForward } from "../_shared/gateway-route.ts";
+import { BASE, GK, RATE_LIMIT, WEBAPP_URL, admin, db, out, ready } from "./core/state.ts";
 import { esc, stripRepeatedIntro } from "./core/output.ts";
 import { MENUS, config, readHistory } from "./core/config.ts";
 import { reply } from "./core/conversation.ts";
 import { groundedSearch, searchMessage } from "./core/search.ts";
-import { allowed, equal, forward, hook, send, tg } from "./core/transport.ts";
+import { allowed, equal, forward, hook, send, tg, withinRate } from "./core/transport.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 Deno.serve(async (req) => {
@@ -29,8 +30,15 @@ Deno.serve(async (req) => {
       search_model_configurable: true,
       search_live_facts_routing: true,
       chat_google_search_tool: true,
+      v10_rate_limit: true,
+      v10_shared_engine: true,
+      v10_life_routing: true,
     });
+  const secretOk = async () => ready() && equal(req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "", await hook());
+  // Diagnostics and webhook setup are privileged: only a caller that already
+  // knows the webhook secret (SHA-256 of "telegram-webhook:<bot token>") may use them.
   if (req.method === "GET" && url.searchParams.has("selftest")) {
+    if (!(await secretOk())) return out({ ok: false }, 401);
     const rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g,
       m = "مقدمه.\n```python\nprint(1)\n```\nپایان.".match(rx),
       t = stripRepeatedIntro(
@@ -45,6 +53,7 @@ Deno.serve(async (req) => {
         "🔮 طالع",
         "🔥 روست",
         "📋 پروفایل من",
+        "🛒 لیست خرید",
       ].every((x) => MENUS.has(x)),
       menu_routes: MENUS.size,
       normal_text_processor: typeof reply === "function",
@@ -63,10 +72,7 @@ Deno.serve(async (req) => {
     });
   }
   if (req.method === "GET" && url.searchParams.has("setup")) {
-    // Setup is privileged: only a caller that already knows the webhook secret
-    // (SHA-256 of "telegram-webhook:<bot token>") may re-register the webhook.
-    const provided = req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
-    if (!ready() || !equal(provided, await hook())) return out({ ok: false }, 401);
+    if (!(await secretOk())) return out({ ok: false }, 401);
     try {
       await tg("setWebhook", {
         url: BASE + "/functions/v1/saeed-ai-ui",
@@ -75,7 +81,12 @@ Deno.serve(async (req) => {
         max_connections: 2,
         drop_pending_updates: false,
       });
-      return out({ ok: true, webhook_registered: true });
+      // The Mini App dashboard is reachable from the chat menu button when configured.
+      if (WEBAPP_URL)
+        await tg("setChatMenuButton", {
+          menu_button: { type: "web_app", text: "📊 داشبورد", web_app: { url: WEBAPP_URL } },
+        });
+      return out({ ok: true, webhook_registered: true, dashboard_menu: !!WEBAPP_URL });
     } catch (e) {
       console.error("SETUP", String(e));
       return out({ ok: false }, 502);
@@ -83,13 +94,7 @@ Deno.serve(async (req) => {
   }
   if (req.method !== "POST") return out({ error: "Not found" }, 404);
   if (!ready()) return out({ error: "Not configured" }, 503);
-  if (
-    !equal(
-      req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "",
-      await hook(),
-    )
-  )
-    return out({ error: "Unauthorized" }, 401);
+  if (!(await secretOk())) return out({ error: "Unauthorized" }, 401);
   let update;
   try {
     const raw = await req.text();
@@ -118,19 +123,12 @@ Deno.serve(async (req) => {
       try {
         if (c) return forward(update);
         if (!m) return;
+        if (!admin(user.id) && !(await withinRate(user.id, RATE_LIMIT))) {
+          await send(user.id, "🐢 یکم آروم‌تر حاجی! چند ثانیه صبر کن و دوباره بفرست. 😅");
+          return;
+        }
         const text = (m.text || "").trim();
-        // Reply transformations must reach the processor with original voice metadata.
-        if (m.reply_to_message?.voice || m.reply_to_message?.audio) return forward(update);
-        if (/^صبح[‌\s-]*نامه\s+(?:تست|الان)$/iu.test(text)) return forward(update);
-        if (
-          MENUS.has(text) ||
-          text.startsWith("/") ||
-          m.document ||
-          m.photo ||
-          m.voice ||
-          m.audio
-        )
-          return forward(update);
+        if (mustForward(m)) return forward(update);
         const { data: state } = await db
           .from("telegram_bot_admin_flow")
           .select("pending_action")
@@ -144,29 +142,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         // Every processor-side pending_tool must be forwarded, otherwise the
         // tools keyboard promises an action the gateway silently downgrades to chat.
-        if (
-          [
-            "repo",
-            "documents",
-            "image",
-            "ocr",
-            "transcribe",
-            "remind",
-            "tasks",
-            "summarize",
-            "translate",
-            "rewrite",
-            "ideas",
-            "email",
-            "calc",
-            "horoscope",
-            "trivia",
-            "story",
-            "joke",
-            "roast",
-          ].includes(p?.pending_tool)
-        )
-          return forward(update);
+        if (forwardsPendingTool(p?.pending_tool)) return forward(update);
         // The menu is a shortcut, not a prerequisite for using a tool.
         const inferred = (p?.pending_tool === "chat" || !p?.pending_tool)
           ? await selectToolIntent(text, GK, (await config()).gemini)

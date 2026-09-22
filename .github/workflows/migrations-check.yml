@@ -1,0 +1,43 @@
+name: Saeed AI Migrations Check
+# Staging-lite: applies every migration twice (idempotency) to an empty
+# PostgreSQL with stand-ins for Supabase-managed objects, then runs a
+# behavioural smoke test of the RPCs and constraints the functions rely on.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/migrations-check.yml'
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/migrations-check.yml'
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+permissions:
+  contents: read
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saeed
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Apply all migrations twice and run the smoke test
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: saeed
+        run: supabase/tests/check-migrations.sh

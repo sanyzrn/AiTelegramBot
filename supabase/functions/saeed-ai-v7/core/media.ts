@@ -1,7 +1,7 @@
 /** Saeed AI saeed-ai-v7 media module. Source moved without behavioral rewrites. */
 import { unzipSync } from "npm:fflate@0.8.2";
 import { tg } from "./transport.ts";
-import { TOKEN } from "./state.ts";
+import { GH, TOKEN } from "./state.ts";
 
 export async function file(id, size, max = 7000000) {
   if (size && size > max) throw Error("FILE_LARGE");
@@ -24,7 +24,18 @@ export function base64(bytes) {
   return btoa(a.join(""));
 }
 
+const isPdf = (d) =>
+  !!d && (d.mime_type === "application/pdf" || /\.pdf$/i.test(d.file_name || ""));
+
+/** Photos, voice/audio and PDFs are sent to Gemini natively as inline data. */
 export function media(m) {
+  if (isPdf(m.document))
+    return {
+      id: m.document.file_id,
+      size: m.document.file_size,
+      type: "pdf",
+      mime: "application/pdf",
+    };
   const p = m.photo?.at(-1);
   if (p)
     return {
@@ -187,6 +198,8 @@ export async function repo(link) {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "SaeedAI",
+        // Optional token lifts the shared-IP limit from 60 to 5000 requests/hour.
+        ...(GH ? { Authorization: "Bearer " + GH } : {}),
       },
       signal: AbortSignal.timeout(17000),
     });

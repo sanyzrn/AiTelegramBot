@@ -1,8 +1,9 @@
-/** Saeed AI saeed-ai-ui output module. Source moved without behavioral rewrites. */
-import { send, tg } from "./transport.ts";
+/** Saeed AI saeed-ai-ui output module: answer post-processing and delivery. */
+import { tg } from "./transport.ts";
+import { escapeHtml } from "../../_shared/format.ts";
+import { sendRich } from "../../_shared/telegram.ts";
 
-export const esc = (s) =>
-  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const esc = escapeHtml;
 
 export function stripRepeatedIntro(text, asked) {
   if (asked) return text;
@@ -16,6 +17,7 @@ export function stripRepeatedIntro(text, asked) {
   );
 }
 
+/** Fenced code becomes copyable <pre> blocks; prose is rendered from Markdown. */
 export async function deliver(chat, answer, tool, prompt) {
   const sections = [],
     rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g;
@@ -50,7 +52,7 @@ export async function deliver(chat, answer, tool, prompt) {
   else sections.push({ type: "text", value: answer });
   for (const part of sections) {
     if (part.type === "text") {
-      await send(chat, part.value);
+      await sendRich(tg, chat, part.value);
       continue;
     }
     const chars = Array.from(part.value),

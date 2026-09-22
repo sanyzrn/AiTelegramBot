@@ -1,26 +1,17 @@
 /** Saeed AI saeed-ai-v7 admin module. Source moved without behavioral rewrites. */
-import { ADMIN, GK, LEGACY, RK, TOKEN, admin, db } from "./state.ts";
-import { pickSearchModel } from "../../_shared/web-search.ts";
+import { ACCESS, ADMIN, GK, RK, TOKEN, admin, db } from "./state.ts";
+import { isAllowed } from "../../_shared/access.ts";
+import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
 import { send } from "./transport.ts";
 
-export async function allowed(id, chat) {
-  if (!Number.isSafeInteger(id) || chat?.type !== "private" || chat.id !== id)
-    return false;
-  if (admin(id)) return true;
-  const { data, error } = await db
-    .from("telegram_bot_user_access")
-    .select("enabled")
-    .eq("telegram_user_id", id)
-    .maybeSingle();
-  return !error && (data ? data.enabled === true : LEGACY.includes(String(id)));
+export function allowed(id, chat) {
+  return isAllowed(db, ACCESS, id, chat);
 }
 
 export async function pref(id) {
   const { data, error } = await db
     .from("telegram_bot_preferences")
-    .select(
-      "telegram_user_id,tone,answer_length,language,pending_tool,keyboard_page",
-    )
+    .select(PREF_COLUMNS)
     .eq("telegram_user_id", id)
     .maybeSingle();
   if (error) throw Error("PREF");
@@ -36,32 +27,33 @@ export async function pref(id) {
   );
 }
 
+const PREF_COLUMNS = "telegram_user_id,tone,answer_length,language,pending_tool,keyboard_page";
+
+/**
+ * Partial update of only the changed columns; a whole-row read-modify-write
+ * could overwrite a concurrent change (e.g. tone saved while a tool resets).
+ */
 export async function save(id, patch) {
-  const p = {
-      ...(await pref(id)),
-      ...patch,
-      updated_at: new Date().toISOString(),
-    },
-    { error } = await db
-      .from("telegram_bot_preferences")
-      .upsert(p, { onConflict: "telegram_user_id" });
+  const changes = { ...patch, updated_at: new Date().toISOString() };
+  const { data, error } = await db
+    .from("telegram_bot_preferences")
+    .update(changes)
+    .eq("telegram_user_id", id)
+    .select(PREF_COLUMNS)
+    .maybeSingle();
   if (error) throw Error("SAVE");
-  return p;
+  if (data) return data;
+  const row = { ...(await pref(id)), ...changes };
+  const { error: insertError } = await db
+    .from("telegram_bot_preferences")
+    .upsert(row, { onConflict: "telegram_user_id" });
+  if (insertError) throw Error("SAVE");
+  return row;
 }
 
-export async function cfg() {
-  const { data, error } = await db
-    .from("telegram_bot_config")
-    .select("setting_key,setting_value");
-  if (error) throw Error("CONFIG");
-  const x = new Map((data || []).map((v) => [v.setting_key, v.setting_value]));
-  return {
-    provider: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
-    gemini: x.get("model") || "gemini-3.5-flash-lite",
-    openrouter: x.get("openrouter_model") || "google/gemma-4-26b-a4b-it:free",
-    search: pickSearchModel(x.get("search_model") || x.get("model")),
-    daily: Number(x.get("daily_limit") ?? 40),
-  };
+/** Runtime model config, cached for 30 s per isolate. */
+export function cfg() {
+  return readBotConfig(db);
 }
 
 export async function configSet(key, val) {
@@ -74,6 +66,7 @@ export async function configSet(key, val) {
     { onConflict: "setting_key" },
   );
   if (error) throw Error("CONFIG_WRITE");
+  clearBotConfigCache();
 }
 
 export async function stats(id, chat) {
@@ -254,6 +247,26 @@ export async function adminInput(id, chat, text) {
     await send(chat, "🙈 مدل پاسخ نداد؛ تنظیم قبلی حفظ شد.");
   }
   return true;
+}
+
+/** Every message still inside the privacy window (chat rows expire after 15 minutes). */
+export async function exportAll(id, chat) {
+  const { data, error } = await db
+    .from("telegram_chat_messages")
+    .select("role,body,created_at")
+    .eq("telegram_user_id", id)
+    .eq("telegram_chat_id", chat)
+    .order("id", { ascending: true })
+    .limit(200);
+  if (error) throw Error("EXPORT");
+  if (!data?.length)
+    return send(chat, "گفت‌وگوی ذخیره‌شده‌ای نیست؛ پیام‌ها بعد از ۱۵ دقیقه برای حریم خصوصی پاک می‌شن. 😅");
+  const body =
+    "# گفت‌وگو با Saeed AI\n\n" +
+    data
+      .map((x) => `## ${x.role === "model" ? "🤖 Saeed AI" : "👤 من"} — ${new Date(x.created_at).toLocaleString("fa-IR", { timeZone: "Asia/Tehran" })}\n\n${x.body}`)
+      .join("\n\n---\n\n");
+  return documentSend(chat, body, "saeed-conversation.md");
 }
 
 export async function exportMd(id, chat) {

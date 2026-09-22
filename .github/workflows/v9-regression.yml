@@ -1,4 +1,4 @@
-name: Saeed AI v9 Regression Tests
+name: Saeed AI Regression Tests
 on:
   push:
     branches: [main]
@@ -42,6 +42,7 @@ jobs:
           core=Path('supabase/functions/saeed-ai-v7/core')
           life=(core/'life.ts').read_text()
           shared=Path('supabase/functions/_shared/life.ts').read_text()
+          view=Path('supabase/functions/_shared/life-context.ts').read_text()
           ui=(core/'ui.ts').read_text()
           part=life.split('async function saveTasks',1)[1].split('async function listTasks',1)[0]
           assert '.delete()' not in part, 'saveTasks must append rather than delete'
@@ -49,7 +50,7 @@ jobs:
           assert 'برای تیک زدن بنویس' not in life, 'do not instruct numeric completion instead of inline buttons'
           assert 'telegram_update_id: update' in life, 'reminders must deduplicate updates'
           assert 'handleLifeCallback' in index and 'calculateExact' in index
-          assert 'task:${x.done ? "undo" : "done"}:' in shared and 'editMessageText' in shared, 'task callbacks must refresh original list'
+          assert 'task:${x.done ? "undo" : "done"}:' in shared and 'showView(' in shared and 'editMessageText' in view, 'task callbacks must refresh original list'
           prompt=ui.split('if (text === "🗑 پاک‌کردن تسک‌ها")',1)[1].split('if (text === "✅ تأیید حذف همه تسک‌ها")',1)[0]
           confirm=ui.split('if (text === "✅ تأیید حذف همه تسک‌ها")',1)[1].split('if (text === "📋 پروفایل من")',1)[0]
           assert '.delete()' not in prompt and 'tasks_delete_confirm' in prompt
@@ -67,7 +68,7 @@ jobs:
           import re
           from pathlib import Path
           workflows=Path('.github/workflows')
-          expected={'deploy-supabase.yml','import-supabase.yml','shared-typecheck.yml','v9-regression.yml'}
+          expected={'deploy-supabase.yml','import-supabase.yml','migrations-check.yml','shared-typecheck.yml','v9-regression.yml'}
           actual={p.name for p in workflows.glob('*.yml')}
           assert actual == expected, f'Review new or missing workflow: {sorted(actual ^ expected)}'
           assert not list(Path('scripts').glob('*.py')), 'One-shot source patch scripts must stay retired'

@@ -262,11 +262,11 @@ test('colloquial city phrasings clear and set without swallowing verbs', async (
 });
 
 test('the cron briefing is city-aware, friendly and lease-safe', () => {
-  const t = read('saeed-ai-reminders/index.ts');
+  const t = read('_shared/dispatch.ts');
   assert.match(t, /p_limit: 6/, 'batch of six preserves headroom for both AI and Telegram timeouts');
   assert.match(t, /morningVoiceConfig/);
   assert.match(t, /telegram_bot_config/, 'voice must follow the chat model config');
-  assert.match(t, /v93_city_voice: true/);
+  assert.match(read('saeed-ai-reminders/index.ts'), /v93_city_voice: true/);
   assert.match(t, /«صبح‌نامه خاموش»/);
   assert.match(t, /fallbackIntro/, 'deterministic warmth must exist without AI');
   assert.match(t, /fetchCityWeather\(city/);
@@ -281,8 +281,8 @@ test('migration and workflows carry the v9.3 city feature', () => {
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lat DOUBLE PRECISION/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS city_lon DOUBLE PRECISION/);
   assert.match(sql, /saeed_ai_briefing_city_pair_chk/);
-  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "9\.4\.0"/);
-  assert.match(readFileSync(resolve('.github/workflows/shared-typecheck.yml'), 'utf8'), /morning-voice\.ts/);
+  assert.match(readFileSync(resolve('supabase/functions/_shared/version.ts'), 'utf8'), /APP_VERSION = "\d+\.\d+\.\d+"/);
+  assert.match(readFileSync(resolve('.github/workflows/shared-typecheck.yml'), 'utf8'), /_shared\/\*\.ts/, 'every shared module is type-checked');
 });
 
 // Additional release guards: prevent made-up numerals and cron lease overruns.
@@ -292,7 +292,7 @@ test('voice rejects unverified generated numerals so factual figures come only f
 });
 
 test('cron limits briefing claim count and one shared AI request deadline', () => {
-  const cron = read('saeed-ai-reminders/index.ts');
+  const cron = read('_shared/dispatch.ts');
   const voice = read('_shared/morning-voice.ts');
   assert.match(cron, /saeed_ai_claim_briefings.{0,60}p_limit: 6/);
   assert.match(voice, /const signal = AbortSignal\.timeout\(7000\)/);

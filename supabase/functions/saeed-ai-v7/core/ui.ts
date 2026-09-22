@@ -1,14 +1,17 @@
 /** Telegram menus, preferences and guarded navigation. */
-import { admin, db } from "./state.ts";
+import { WEBAPP_URL, admin, db, tg } from "./state.ts";
 import { cfg, configSet, exportMd, flow, save, stats, testModel } from "./admin.ts";
 import { send } from "./transport.ts";
 import { listTasks, profile } from "./life.ts";
+import { handleLifeMessage } from "../../_shared/life.ts";
+import { formatLocal, userTimeZone } from "../../_shared/timezone.ts";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from "../../_shared/bot-config.ts";
 
-import { TONES, SIZES, LANG, TOOLS } from "./menu.ts";
+import { ADMIN_PAGES, BUTTON_COMMANDS, DASHBOARD_BUTTON, TONES, SIZES, LANG, TOOLS } from "./menu.ts";
 export { TONES, SIZES, LANG, TOOLS, MENU, rows, keyboard, toneGuide } from "./menu.ts";
 
 export async function show(id, chat, page) {
-  if (["admin", "users", "models", "quota"].includes(page) && !admin(id))
+  if (ADMIN_PAGES.includes(page) && !admin(id))
     return;
   const p = await save(id, { keyboard_page: page }),
     s = await cfg();
@@ -16,6 +19,7 @@ export async function show(id, chat, page) {
     {
       home: "بفرما حاجی چی تو ذهنته 😁",
       tools: "🧰 جعبه‌ابزار\nگزینه موردنظرت رو از کیبورد پایین انتخاب کن. 😎",
+      life: "🗂 کارهای روزمره\nیادآور، تسک، خرید، خرج، هشدار، صبح‌نامه و پومودورو همه این‌جان. می‌تونی مستقیم هم تایپ کنی؛ مثلاً «ناهار ۴۸۰ هزار تومان» یا «وقتی دلار از ۹۵ هزار رد شد خبرم کن». 😎",
       settings: `⚙️ تنظیمات شخصی\n🎭 ${TONES[p.tone]}\n📏 ${SIZES[p.answer_length]}\n🌐 ${LANG[p.language]}`,
       tones: "🎭 چه لحنی انتخاب می‌کنی؟",
       length: "📏 اندازه جواب رو انتخاب کن.",
@@ -26,7 +30,7 @@ export async function show(id, chat, page) {
       tasks: "✅ مدیر تسک‌ها\nکارهاتو بگو تا برات لیست کنم.",
       tasks_delete_confirm: "⚠️ تمام تسک‌های تو، حتی تسک‌های انجام‌شده، برای همیشه پاک می‌شن. مطمئنی؟ برای حذف، دکمه تأیید رو بزن؛ برای حفظ تسک‌ها انصراف بده.",
       reset: "⚠️ مطمئنی می‌خوای تاریخچه خودت رو پاک کنی؟",
-      admin: "🛡 پنل مدیریت Saeed AI 👑",
+      admin: `🛡 پنل مدیریت Saeed AI 👑\n🔎 جست‌وجوی گوگل در چت عادی: ${s.chatSearch ? "روشن" : "خاموش"}`,
       users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
       models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}`,
       quota: `📊 سقف پیش‌فرض روزانه: ${s.daily === 0 ? "نامحدود" : s.daily + " پیام"}`,
@@ -70,6 +74,7 @@ export async function navigate(id, chat, text, p) {
     "📊 سهمیه روزانه": "quota",
     "🎉 سرگرمی": "fun",
     "✅ تسک‌ها": "tasks",
+    "🗂 روزمره": "life",
   };
   if (pages[text]) {
     if (pages[text] === "home") await save(id, { pending_tool: "chat" });
@@ -81,34 +86,38 @@ export async function navigate(id, chat, text, p) {
     await show(id, chat, pages[text]);
     return true;
   }
+  // Life buttons are shortcuts for the equivalent typed command.
+  if (BUTTON_COMMANDS[text]) {
+    await save(id, { pending_tool: "chat", keyboard_page: "life" });
+    await handleLifeMessage({ db, tg, send }, id, chat, BUTTON_COMMANDS[text], 0);
+    return true;
+  }
+  if (text === DASHBOARD_BUTTON) {
+    await send(chat, WEBAPP_URL
+      ? "📊 داشبورد از دکمه‌ی پایین صفحه باز می‌شه."
+      : "📊 داشبورد هنوز توسط مدیر فعال نشده.", "home", id);
+    return true;
+  }
   if (text === "⏰ یادآور") {
     await save(id, { pending_tool: "remind" });
+    const tz = await userTimeZone(db, id);
     const { data: rems } = await db
       .from("saeed_ai_reminders")
       .select("note,remind_at")
       .eq("telegram_user_id", id)
       .eq("sent", false)
+      .eq("canceled", false)
       .order("remind_at")
       .limit(8);
     await send(
       chat,
       (rems?.length
         ? "⏰ یادآورهای فعالت:\n" +
-          rems
-            .map(
-              (x) =>
-                "▫️ " +
-                x.note +
-                " — " +
-                new Date(x.remind_at).toLocaleString("fa-IR", {
-                  timeZone: "Asia/Tehran",
-                }),
-            )
-            .join("\n") +
-          "\n\n"
+          rems.map((x) => "▫️ " + x.note + " — " + formatLocal(new Date(x.remind_at), tz)).join("\n") +
+          "\n(برای لغو: «یادآورهام»)\n\n"
         : "") +
-        "یادآور جدیدت رو بنویس؛ مثلاً «۴۵ دقیقه دیگه قابلمه رو خاموش کن» 😉",
-      "tools",
+        "یادآور جدیدت رو بنویس؛ مثلاً «۴۵ دقیقه دیگه قابلمه رو خاموش کن» یا «تایمر یک ساعت و نیم بذار» 😉",
+      "life",
       id,
     );
     return true;
@@ -211,8 +220,8 @@ export async function navigate(id, chat, text, p) {
       const provider = text.endsWith("Gemini") ? "gemini" : "openrouter",
         model =
           provider === "gemini"
-            ? "gemini-3.5-flash-lite"
-            : "google/gemma-4-26b-a4b-it:free";
+            ? DEFAULT_GEMINI_MODEL
+            : DEFAULT_OPENROUTER_MODEL;
       try {
         await testModel(provider, model);
         await configSet(
@@ -229,6 +238,14 @@ export async function navigate(id, chat, text, p) {
       await stats(id, chat);
       return true;
     }
+    if (text === "🔎 جست‌وجوی چت") {
+      const s = await cfg();
+      await configSet("chat_search", s.chatSearch ? "off" : "on");
+      await send(chat, s.chatSearch
+        ? "🔎 جست‌وجوی گوگل در چت عادی خاموش شد؛ فقط ابزار «🌐 آنلاین» جست‌وجو می‌کنه (کم‌هزینه‌تر و سریع‌تر)."
+        : "🔎 جست‌وجوی گوگل در چت عادی روشن شد؛ جواب‌های زنده همراه با منبع میان.", "admin", id);
+      return true;
+    }
   }
   for (const [k, v] of Object.entries(TOOLS))
     if (text === v) {
@@ -238,9 +255,11 @@ export async function navigate(id, chat, text, p) {
         k === "repo"
           ? "💻 لینک مخزن عمومی GitHub رو بفرست."
           : k === "documents"
-            ? "📄 فایل Word، Excel یا Markdown رو بفرست."
+            ? "📄 فایل PDF، Word، Excel یا Markdown رو بفرست."
             : k === "web"
               ? "🌐 موضوعی که باید آنلاین بررسی کنم رو بنویس."
+              : k === "receipt"
+                ? "🧾 عکس رسید یا فاکتور رو بفرست؛ مبلغش رو می‌خونم و قبل از ثبت ازت تأیید می‌گیرم."
               : k === "calc"
                 ? "🧮 محاسبه یا مسئله‌ات رو بنویس؛ مرحله‌به‌مرحله حلش می‌کنم."
                 : k === "email"

@@ -5,7 +5,7 @@ import { inferToolIntent } from '../supabase/functions/_shared/tool-intent.ts';
 
 test('Persian spoken seven-minute timer is parsed, not answered as chat', () => {
   const phrase = 'حاجی یه تایمر برای هفت دقیقه بذار';
-  assert.deepEqual(parseTimerRequest(phrase), { minutes: 7, note: 'پایان تایمر 7 دقیقه‌ای' });
+  assert.deepEqual(parseTimerRequest(phrase), { minutes: 7, seconds: 420, note: 'پایان تایمر ۷ دقیقه' });
   assert.equal(inferToolIntent(phrase), 'remind');
 });
 test('Persian and Arabic digits plus compound cardinal numbers', () => {
@@ -23,4 +23,20 @@ test('Timer parser rejects questions, past-tense acknowledgements and invalid du
 });
 test('Timer intent is not inferred for a question about a timer', () => {
   assert.equal(inferToolIntent('تایمر چرا کار نمیکنه؟'), 'chat');
+});
+
+test('compound durations are summed instead of silently truncated', () => {
+  assert.equal(parseTimerRequest('تایمر یک ساعت و نیم بذار')?.minutes, 90);
+  assert.equal(parseTimerRequest('تایمر ۱ ساعت و ۳۰ دقیقه بذار')?.minutes, 90);
+  assert.equal(parseTimerRequest('تایمر یک ساعت و بیست دقیقه بذار')?.minutes, 80);
+  assert.equal(parseTimerRequest('تایمر ۲ دقیقه و ۳۰ ثانیه بذار')?.seconds, 150);
+  assert.equal(parseTimerRequest('تایمر ۹۰ ثانیه بذار')?.seconds, 90);
+  assert.equal(parseTimerRequest('یه تایمر یه ربع بذار')?.minutes, 15);
+  assert.equal(parseTimerRequest('تایمر سه ربع بذار')?.minutes, 45);
+  assert.equal(parseTimerRequest('تایمر پونزده دقیقه بذار')?.minutes, 15);
+});
+test('timer labels use Persian digits and reject sub-30-second or ambiguous durations', () => {
+  assert.equal(parseTimerRequest('تایمر ۱ ساعت و ۳۰ دقیقه بذار')?.note, 'پایان تایمر ۱ ساعت و ۳۰ دقیقه');
+  assert.equal(parseTimerRequest('تایمر ۱۰ ثانیه بذار'), null);
+  assert.equal(parseTimerRequest('تایمر ۲۵ ساعت بذار'), null);
 });

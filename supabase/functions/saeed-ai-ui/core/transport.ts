@@ -1,48 +1,20 @@
-/** Saeed AI saeed-ai-ui transport module. Source moved without behavioral rewrites. */
-import { BASE, LEGACY, TOKEN, admin, db } from "./state.ts";
+/** Saeed AI saeed-ai-ui transport module: webhook secret, Telegram output and processor forwarding. */
+import { ACCESS, BASE, TOKEN, db, tg } from "./state.ts";
+import { isAllowed } from "../../_shared/access.ts";
+import { safeEqual, sendPlain, webhookSecret } from "../../_shared/telegram.ts";
 
 let HOOK = "";
 
 export async function hook() {
-  if (HOOK) return HOOK;
-  const d = new Uint8Array(
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode("telegram-webhook:" + TOKEN),
-    ),
-  );
-  HOOK = Array.from(d, (v) => v.toString(16).padStart(2, "0")).join("");
+  if (!HOOK) HOOK = await webhookSecret(TOKEN);
   return HOOK;
 }
 
-export function equal(a, b) {
-  const x = new TextEncoder().encode(a),
-    y = new TextEncoder().encode(b);
-  let n = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++)
-    n |= (x[i] || 0) ^ (y[i] || 0);
-  return n === 0;
-}
+export const equal = safeEqual;
+export { tg };
 
-export async function tg(method, data) {
-  const r = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(20000),
-    }),
-    j = await r.json();
-  if (!r.ok || !j.ok) throw Error("TG_" + r.status);
-  return j.result;
-}
-
-export async function send(chat, text) {
-  const a = Array.from(String(text || "…"));
-  for (let i = 0; i < a.length; i += 3400)
-    await tg("sendMessage", {
-      chat_id: chat,
-      text: a.slice(i, i + 3400).join(""),
-    });
+export function send(chat, text) {
+  return sendPlain(tg, chat, text);
 }
 
 export async function forward(update) {
@@ -58,14 +30,19 @@ export async function forward(update) {
   if (!r.ok) throw Error("FORWARD_" + r.status);
 }
 
-export async function allowed(id, chat) {
-  if (!Number.isSafeInteger(id) || chat?.type !== "private" || chat.id !== id)
-    return false;
-  if (admin(id)) return true;
-  const { data, error } = await db
-    .from("telegram_bot_user_access")
-    .select("enabled")
-    .eq("telegram_user_id", id)
-    .maybeSingle();
-  return !error && (data ? data.enabled === true : LEGACY.includes(String(id)));
+export function allowed(id, chat) {
+  return isAllowed(db, ACCESS, id, chat);
+}
+
+/**
+ * Per-minute flood guard (the daily quota alone let one user burst hundreds of
+ * requests). Fails open on a database error so a missing RPC never blocks chat.
+ */
+export async function withinRate(id, limit) {
+  const { data, error } = await db.rpc("saeed_ai_rate_hit", { p_user_id: id, p_limit: limit });
+  if (error) {
+    console.error("RATE", error.code);
+    return true;
+  }
+  return data !== false;
 }

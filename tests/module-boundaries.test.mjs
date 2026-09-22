@@ -47,9 +47,12 @@ test('core modules have no unused named imports or circular dependencies', () =>
 
 test('presentation menu is pure and transport/life never depend on UI controller', () => {
   const dir = join(root, 'saeed-ai-v7', 'core');
+  const shared = readFileSync(join(root, '_shared', 'menu.ts'), 'utf8');
+  assert.doesNotMatch(shared, /^import\b/m, 'the shared menu must stay pure');
+  assert.match(shared, /export const keyboard/);
   const menu = readFileSync(join(dir, 'menu.ts'), 'utf8');
   assert.doesNotMatch(menu, /^import\b/m);
-  assert.match(menu, /export const keyboard/);
+  assert.match(menu, /_shared\/menu\.ts/, 'the processor menu re-exports the single shared definition');
   for (const name of ['transport.ts', 'life.ts']) {
     const source = readFileSync(join(dir, name), 'utf8');
     assert.doesNotMatch(source, /from\s*['"]\.\/ui\.ts['"]/, `${name} must not depend on UI controller`);

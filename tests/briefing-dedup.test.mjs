@@ -34,9 +34,9 @@ test('a mixed single-sentence forecast falls back instead of repeating weather',
 });
 
 test('cron keeps verified sourced forecast and only changes the introduction', () => {
-  const cron = readFileSync('supabase/functions/saeed-ai-reminders/index.ts', 'utf8');
+  const cron = readFileSync('supabase/functions/_shared/dispatch.ts', 'utf8');
   assert.match(cron, /briefingIntro\(voice, facts\)/);
   assert.match(cron, /weather\?\.line/);
-  assert.match(cron, /fetchCityWeather\(city/);
+  assert.match(cron, /cache\.weather\(city\)/);
   assert.match(cron, /last_sent_day/);
 });
