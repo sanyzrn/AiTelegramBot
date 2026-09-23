@@ -1,6 +1,6 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 10.1.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
+**Current application release: 10.1.1.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
 
 ## v10.1.0 every tool works without the menu
 
