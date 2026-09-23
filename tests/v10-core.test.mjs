@@ -81,6 +81,9 @@ test('bot config defaults, admin search switch and 30-second cache', async () =>
   assert.equal(c.chatSearch, false);
   assert.equal(c.search, 'gemini-3.5-flash', 'lite chat models never ground search');
   assert.equal(parseBotConfig([]).chatSearch, true);
+  assert.equal(parseBotConfig([]).provider, 'openrouter', 'missing provider config defaults to OpenRouter');
+  assert.equal(parseBotConfig([{ setting_key: 'provider', setting_value: 'gemini' }]).provider, 'gemini', 'explicit Gemini selection remains respected');
+  assert.equal(parseBotConfig([{ setting_key: 'provider', setting_value: 'openrouter' }]).provider, 'openrouter');
   clearBotConfigCache();
   let reads = 0;
   const db = { from() { return { select: async () => { reads++; return { data: [], error: null }; } }; } };
