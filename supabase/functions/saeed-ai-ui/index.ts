@@ -11,6 +11,25 @@ import { allowed, equal, forward, hook, send, tg, withinRate } from "./core/tran
 import type { TgUpdate } from "../_shared/telegram.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
+/**
+ * Chat menu button for the Mini App. The label is Latin on purpose: Telegram
+ * renders an RTL label outside the collapsed button, inside the input box.
+ */
+const menuButton = () => ({ type: "web_app", text: "Dashboard", web_app: { url: WEBAPP_URL } });
+let menuSynced = false;
+
+/** Keeps the button in sync after every deploy without a manual ?setup call. */
+async function syncMenuButton() {
+  if (menuSynced || !WEBAPP_URL) return;
+  menuSynced = true;
+  try {
+    await tg("setChatMenuButton", { menu_button: menuButton() });
+  } catch (e) {
+    menuSynced = false;
+    console.error("MENU_BUTTON", String(e).slice(0, 80));
+  }
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "GET" && url.searchParams.has("health"))
@@ -84,9 +103,7 @@ Deno.serve(async (req) => {
       });
       // The Mini App dashboard is reachable from the chat menu button when configured.
       if (WEBAPP_URL)
-        await tg("setChatMenuButton", {
-          menu_button: { type: "web_app", text: "📊", web_app: { url: WEBAPP_URL } },
-        });
+        await tg("setChatMenuButton", { menu_button: menuButton() });
       return out({ ok: true, webhook_registered: true, dashboard_menu: !!WEBAPP_URL });
     } catch (e) {
       console.error("SETUP", String(e));
@@ -121,6 +138,7 @@ Deno.serve(async (req) => {
   }
   EdgeRuntime.waitUntil(
     (async () => {
+      await syncMenuButton();
       try {
         if (c) return forward(update);
         if (!m) return;
