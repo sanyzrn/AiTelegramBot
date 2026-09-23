@@ -20,7 +20,7 @@ export function parseBotConfig(rows: Array<{ setting_key: string; setting_value:
   const x = new Map(rows.map((v) => [v.setting_key, v.setting_value]));
   const daily = Number(x.get("daily_limit") ?? 40);
   return {
-    provider: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
+    provider: x.get("provider") === "gemini" ? "gemini" : "openrouter",
     gemini: x.get("model") || DEFAULT_GEMINI_MODEL,
     openrouter: x.get("openrouter_model") || DEFAULT_OPENROUTER_MODEL,
     search: pickSearchModel(x.get("search_model") || x.get("model")),
