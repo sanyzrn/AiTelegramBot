@@ -14,7 +14,7 @@ type Msg = {
   photo?: unknown;
   voice?: unknown;
   audio?: unknown;
-  reply_to_message?: { voice?: unknown; audio?: unknown; text?: string; caption?: string } | null;
+  reply_to_message?: { voice?: unknown; audio?: unknown; photo?: unknown; document?: unknown; text?: string; caption?: string } | null;
 };
 
 /** Decisions that need no database: media, commands, buttons and typed life commands. */
@@ -22,6 +22,8 @@ export function mustForward(m: Msg): boolean {
   const text = (m.text || "").trim();
   // Reply transformations must reach the processor with original voice metadata.
   if (m.reply_to_message?.voice || m.reply_to_message?.audio) return true;
+  // «ثبتش کن» / «متنش رو بنویس» as a reply to a photo or file acts on that file.
+  if (m.reply_to_message?.photo || m.reply_to_message?.document) return true;
   if (MENUS.has(text) || text.startsWith("/")) return true;
   if (m.document || m.photo || m.voice || m.audio) return true;
   if (isLifeCommand(text)) return true;

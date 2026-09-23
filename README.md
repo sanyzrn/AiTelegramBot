@@ -1,6 +1,12 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 10.0.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
+**Current application release: 10.1.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
+
+## v10.1.0 every tool works without the menu
+
+- **Photos and files pick their own tool.** The caption decides: «این هزینه رو ثبت کن» / «رسید» / «فاکتور» → receipt (confirmed before saving), «متنش رو بنویس» → OCR, «ترجمه کن» → translate, «خلاصه کن» → summary; anything else is analysed. A photo with **no caption** is checked for a receipt first and offered as an expense. A **text reply to an earlier photo or file** («ثبتش کن», «متنش رو بنویس») acts on that file. PDF receipts work too (`_shared/media-intent.ts`).
+- **Every keyboard tool also works from typed text:** «رسید رو ثبت کن» (then just send the photo), «یه جوک بگو», «یه داستان کوتاه بنویس», «فال امروزم رو بگو», «یه معما بپرس», «روستم کن», alongside the existing summary/translate/rewrite/email/ideas/reminder/task/expense intents.
+- A file-only tool (فایل‌خوان، تحلیل عکس، متن عکس، ثبت رسید) never leaves the bot «waiting»: typed text meanwhile is answered normally.
 
 ## v10.0.0 fixes, hardening and life upgrades
 

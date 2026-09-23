@@ -250,11 +250,18 @@ async function work(
               : tool === "execute"
                 ? "Listen carefully to the voice message and carry out the user’s spoken request NOW. If they request a poem, WRITE THE POEM as your answer; if they ask a question, ANSWER IT. Do not merely transcribe, extract tasks, list intentions, or explain what you would do. Respond with the actual requested content in the configured language and tone. If the message contains no request, respond naturally. Do not claim to have performed external actions that you cannot perform."
                 : "از ویس کارها و موعدها را استخراج کن؛ چیزی حدس نزن.";
-    else if (med?.type === "image" && !prompt)
+    else if (med?.type === "image") {
+      // The caption is the user's request; the tool adds what to do with the picture.
+      const ask = prompt ? `\nدرخواست کاربر: ${prompt}` : "";
       input =
         tool === "ocr"
-          ? "متن تصویر را دقیق استخراج کن."
-          : "این تصویر را بررسی کن.";
+          ? "متن داخل تصویر را دقیق و کامل استخراج کن." + ask
+          : tool === "translate"
+            ? "متن داخل تصویر را استخراج و ترجمه کن (اگر فارسی است به انگلیسی، وگرنه به فارسی)." + ask
+            : tool === "summarize"
+              ? "محتوای متنی تصویر را بخوان و خلاصه کن." + ask
+              : prompt || "این تصویر را بررسی کن.";
+    }
     else if (med?.type === "pdf" && !prompt)
       input = "این سند PDF را بررسی کن: موضوع، نکات کلیدی و هر عدد یا تاریخ مهم را خلاصه کن و محدودیت‌های بررسی را بگو.";
     if (!med && !document) {
@@ -285,7 +292,7 @@ async function work(
     // Receipt photo → structured draft → the user confirms before anything is saved.
     if (tool === "receipt") {
       await save(id, { pending_tool: "chat", keyboard_page: "life" });
-      if (med?.type !== "image") {
+      if (med?.type !== "image" && med?.type !== "pdf") {
         await send(chat, "🧾 عکس رسید یا فاکتور رو بفرست تا مبلغش رو بخونم.");
         await metric(update, id, s, "success");
         await completeRetry(original, id);
@@ -299,6 +306,20 @@ async function work(
         await send(chat, "🧾 نتونستم مبلغ نهایی رو با اطمینان از این عکس بخونم؛ برای اینکه عدد اشتباه ثبت نشه چیزی ذخیره نکردم. خودت بنویس، مثلاً «سوپرمارکت ۳۴۰ هزار تومان».");
       else await proposeReceipt({ db, tg, send }, id, chat, draft);
       return;
+    }
+    // A photo with no caption: if it is a receipt/invoice/order summary, offer to
+    // record it as an expense (still confirmed by the user); otherwise analyse it.
+    if (tool === "image" && med?.type === "image" && !prompt) {
+      const probe = await ai({ ...s, provider: "gemini" }, [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.", { maxTokens: 512 });
+      const j = parseJsonObject(probe.text);
+      if (j?.is_receipt === true) {
+        const draft = parseReceiptJson(j);
+        await metric(update, id, s, "success", probe.usage);
+        await completeRetry(original, id);
+        if (draft) await proposeReceipt({ db, tg, send }, id, chat, draft);
+        else await send(chat, "🧾 به نظر رسید یا فاکتوره، ولی مبلغ نهایی رو با اطمینان نخوندم؛ چیزی ثبت نکردم. اگه خواستی خودت بنویس، مثلاً «سوپرمارکت ۳۴۰ هزار تومان».");
+        return;
+      }
     }
     // /voice_execute is a two-stage operation: transcribe first, then actually run
     // the selected side-effecting tool. A generative response is NOT confirmation.
