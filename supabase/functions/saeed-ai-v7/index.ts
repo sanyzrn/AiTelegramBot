@@ -3,6 +3,7 @@ import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
 import { EXPORT_ALL, REPLY_TRANSLATE, SPEAK } from "../_shared/life-commands.ts";
+import { ASKS_FOR_RECEIPT, mediaTool } from "../_shared/media-intent.ts";
 import { calculateExact } from "../_shared/calculator.ts";
 import { parseTimerRequest, normalizeTimerDigits } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
@@ -15,8 +16,6 @@ import { doneTask, profile, saveTasks, scheduleRealTimer, setReminder } from "./
 import { doc, media } from "./core/media.ts";
 import type { TgMessage, TgUpdate } from "../_shared/telegram.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
-
-const RECEIPT_CAPTION = /(?:رسید|فاکتور|فیش|خرج|receipt|invoice)/iu;
 
 const life = (from?: TgMessage["from"]) => ({ db, tg, send, actorName: [from?.first_name, from?.last_name].filter(Boolean).join(" ").slice(0, 60) });
 
@@ -69,12 +68,31 @@ async function callbacks(c: NonNullable<TgUpdate["callback_query"]>, update: num
   return show(id, chat, "home");
 }
 
-async function message(m: TgMessage, update: number) {
+/**
+ * Photos and files pick their tool from the caption (or from a text reply to
+ * the file): «این هزینه رو ثبت کن» → receipt, «متنش رو بنویس» → OCR,
+ * «ترجمه کن» → translate … An explicitly chosen compatible tool still wins.
+ */
+async function mediaMessage(m: TgMessage, update: number, pending: string) {
+  const d = doc(m), med = media(m);
+  if (m.document && !d && med?.type !== "pdf")
+    return send(m.chat.id, "📎 فعلاً عکس، PDF، DOCX، XLSX، MD، TXT و CSV رو می‌خونم. 😁");
+  const kind = m.photo ? "photo" : med?.type === "pdf" ? "pdf" : "office";
+  return startWork(m, update, mediaTool(kind, m.caption || "", pending), (m.caption || "").trim(), null);
+}
+
+async function message(original: TgMessage, update: number) {
+  let m = original;
   const id = m.from.id,
     chat = m.chat.id,
     text = (m.text || "").trim(),
     p = await pref(id);
   if (await handleVoiceReply(m, update)) return;
+  // A text reply to a photo or file works on that file, with the text as its caption.
+  const replied = m.reply_to_message;
+  if (text && !text.startsWith("/") && !SPEAK.test(text) && (replied?.photo?.length || replied?.document))
+    m = { ...m, text: "", caption: text, photo: replied.photo || null, document: replied.document || null, reply_to_message: null };
+  if (m.photo || m.document) return mediaMessage(m, update, p.pending_tool);
   if (/^\/(start|menu|help)(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "chat" });
     return show(id, chat, "home");
@@ -169,19 +187,17 @@ async function message(m: TgMessage, update: number) {
       /(?:بذار|بگذار|بزن|تنظیم\s*کن|ست\s*کن|شروع\s*کن|set|start)/iu.test(text) &&
       !/(?:چرا|چطور|کار\s*نمی[‌\s]*کن|\?|؟)/iu.test(text))
     return send(chat, "⏰ مدت تایمر رو دقیق بگو؛ مثلاً «تایمر ۷ دقیقه بذار». چیزی ثبت نکردم.");
-  // Photos of receipts go to the receipt tool (explicitly chosen or captioned).
-  if (m.photo && (p.pending_tool === "receipt" || RECEIPT_CAPTION.test(m.caption || "")))
-    return startWork(m, update, "receipt", (m.caption || "").trim(), null);
-  if (!m.photo && !m.document && await handleLifeMessage(life(m.from), id, chat, (m.caption || text).trim(), update)) return;
+  if (await handleLifeMessage(life(m.from), id, chat, (m.caption || text).trim(), update)) return;
   const exact = calculateExact(text);
   if (exact) return send(chat, exact);
   // Reply-translate shortcut: «ترجمه» on any replied text.
   if (REPLY_TRANSLATE.test(text) && (m.reply_to_message?.text || m.reply_to_message?.caption))
     return startWork(m, update, "translate", "این متن را ترجمه کن.", null);
   // A gateway-selected intent is validated against this local allowlist.
-  const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing"]);
+  const safeTools = new Set(["remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing", "receipt", "joke", "story", "horoscope", "trivia", "roast"]);
   const requestText = (m.caption || text).trim();
-  const inferred: string = p.pending_tool === "chat" && requestText
+  // File-only tools don't block understanding a typed request in the meantime.
+  const inferred: string = (p.pending_tool === "chat" || ["documents", "image", "ocr", "receipt"].includes(p.pending_tool)) && requestText
     ? m.saeed_auto_tool && safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
       : await selectToolIntent(requestText, GK, (await cfg()).gemini)
@@ -196,9 +212,17 @@ async function message(m: TgMessage, update: number) {
     if (!(await charge(id, chat, update))) return;
     return saveTasks(id, chat, requestText, update);
   }
+  // «رسید رو ثبت کن» without a photo: remember the intent, the next photo is the receipt.
+  if (inferred === "receipt" || (inferred === "expenses" && ASKS_FOR_RECEIPT.test(requestText))) {
+    await save(id, { pending_tool: "receipt" });
+    return send(chat, "🧾 عکس رسید یا فاکتور رو بفرست؛ مبلغش رو می‌خونم و قبل از ثبت ازت تأیید می‌گیرم.");
+  }
+  // Fun tools straight from text: «یه جوک بگو», «فال امروزم چیه», «یه معما بپرس» …
+  if (["joke", "story", "horoscope", "trivia", "roast"].includes(inferred))
+    return startWork(m, update, inferred, requestText, null);
   if (["expenses", "shopping", "briefing"].includes(inferred)) {
     if (await handleLifeMessage(life(m.from), id, chat, requestText, update)) return;
-    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ برای گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
+    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ یا عکس رسیدش رو بفرست. گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
   }
   if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
   if (inferred === "repo") {
@@ -206,28 +230,24 @@ async function message(m: TgMessage, update: number) {
     if (link) return startWork(m, update, "repo", link[0], null);
   }
   if (m.voice || m.audio) return chooseVoice(m, update);
-  const d = doc(m),
-    med = media(m),
-    input = (m.caption || text).trim(),
+  const input = (m.caption || text).trim(),
     isRepo = /^https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?$/.test(
       input,
-    ),
-    tool = d || med?.type === "pdf"
-      ? "documents"
-      : inferred !== "chat"
-        ? inferred
-        : p.pending_tool === "chat" && isRepo
-          ? "repo"
-          : p.pending_tool;
-  if (m.document && !d && med?.type !== "pdf")
-    return send(chat, "📎 فعلاً PDF، DOCX، XLSX، MD، TXT و CSV رو می‌خونم. 😁");
-  if (tool === "documents" && !d && med?.type !== "pdf")
-    return send(chat, "📄 فایل موردنظر رو بفرست.");
+    );
+  let tool = inferred !== "chat"
+    ? inferred
+    : isRepo
+      ? "repo"
+      : p.pending_tool;
+  // File-only tools never leave the bot «waiting»: a plain text meanwhile is
+  // just a message, and the next photo/file still picks its tool by itself.
+  if (["documents", "image", "ocr", "receipt"].includes(tool)) {
+    await save(id, { pending_tool: "chat" });
+    tool = "chat";
+  }
   if (tool === "repo" && !isRepo)
     return send(chat, "💻 لینک اصلی مخزن عمومی GitHub رو بفرست.");
-  if (tool === "receipt" && !m.photo)
-    return send(chat, "🧾 عکس رسید یا فاکتور رو بفرست تا مبلغش رو بخونم.");
-  if (!input && !med && !d)
+  if (!input)
     return send(chat, "😊 پیام یا فایل موردنظر رو بفرست.");
   await startWork(m, update, tool, input, null);
 }

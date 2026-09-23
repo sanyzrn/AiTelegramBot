@@ -128,7 +128,10 @@ export type TgMessage = {
   caption?: string;
   from: { id: number; is_bot?: boolean; first_name?: string; last_name?: string };
   chat: { id: number; type?: string };
-  reply_to_message?: { message_id?: number; text?: string; caption?: string; voice?: TgFile | null; audio?: TgFile | null; from?: { is_bot?: boolean } } | null;
+  reply_to_message?: {
+    message_id?: number; text?: string; caption?: string; voice?: TgFile | null; audio?: TgFile | null;
+    photo?: TgFile[] | null; document?: TgFile | null; from?: { is_bot?: boolean };
+  } | null;
   photo?: TgFile[] | null;
   voice?: TgFile | null;
   audio?: TgFile | null;

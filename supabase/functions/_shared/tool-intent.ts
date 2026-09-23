@@ -1,5 +1,6 @@
 import { parseTimerRequest } from "./timer.ts";
-export type ToolIntent = "chat" | "remind" | "tasks" | "web" | "repo" | "summarize" | "translate" | "rewrite" | "calc" | "email" | "ideas" | "expenses" | "shopping" | "briefing";
+export type ToolIntent = "chat" | "remind" | "tasks" | "web" | "repo" | "summarize" | "translate" | "rewrite" | "calc" | "email" | "ideas" | "expenses" | "shopping" | "briefing"
+  | "receipt" | "joke" | "story" | "horoscope" | "trivia" | "roast";
 /** Explicit search commands — matched before how-to so «جستجو کن چطور…» still searches. */
 const EXPLICIT_WEB =
   /(?:جست(?:جو|‌جو|‌وجو|و\s*جو)\s*(?:کن|کنم|بزن|بگیر)|جست(?:جو|‌جو|‌وجو)ی\s*(?:آنلاین|اینترنت|وب)|(?:آنلاین|اینترنت|وب)\s*(?:جست(?:جو|‌جو|‌وجو)|سرچ|بگرد|پیدا\s*کن)|سرچ\s*کن|search\s+(?:the\s+)?web|search\s+online|google\s+(?:کن|it)|بگرد\s*(?:دنبال|درباره|راجع)|تو\s*(?:اینترنت|گوگل|وب)\s*(?:بگرد|سرچ|جست))/iu;
@@ -33,5 +34,12 @@ export function inferToolIntent(text: string): ToolIntent {
   if (/(?:محاسبه\s*کن|حساب\s*کن|calculate|[\d۰-۹٠-٩]\s*[%٪]\s*(?:از|of)|^[\d۰-۹٠-٩.,٬،\s]+\s*[+*×/÷-]\s*[\d۰-۹٠-٩.,٬،\s]+$)/iu.test(input)) return "calc";
   if (/(?:ایمیل\s*بنویس|متن\s*ایمیل|draft\s+(?:an?\s+)?email)/iu.test(input)) return "email";
   if (/(?:ایده\s*بده|ایده‌پردازی|brainstorm)/iu.test(input)) return "ideas";
+  // Every keyboard tool also works from plain text, no menu needed.
+  if (/(?:رسید|فاکتور|فیش|صورت[\s‌]*حساب)(?:ه|م|ش)?\s*(?:(?:رو|را)\s*)?(?:ثبت|وارد|اضافه)\s*کن/iu.test(input)) return "receipt";
+  if (/(?:(?:یه|یک)\s*)?(?:جوک|لطیفه)\s*(?:بگو|تعریف\s*کن|بلدی|داری)|^(?:یه|یک)\s*جوک/iu.test(input)) return "joke";
+  if (/(?:یه|یک)\s*(?:داستان|قصه)(?:\s*کوتاه)?\s*(?:بگو|بنویس|تعریف\s*کن)|^(?:قصه|داستان)\s*(?:بگو|تعریف\s*کن)/iu.test(input)) return "story";
+  if (!/حافظ/u.test(input) && /(?:طالع|فال)(?:\s*(?:امروز|روزانه))?(?:\s*(?:من|م))?\s*(?:(?:رو|را)\s*)?(?:بگو|بگیر|ببین|چیه)/iu.test(input)) return "horoscope";
+  if (/(?:(?:یه|یک)\s*(?:معما|چیستان))|(?:معما|چیستان|تست\s*هوش)\s*(?:بگو|بده|بپرس|طرح\s*کن)/iu.test(input)) return "trivia";
+  if (/(?:روست(?:م)?\s*کن|منو\s*روست|roast\s+me)/iu.test(input)) return "roast";
   return "chat";
 }
