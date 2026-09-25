@@ -942,12 +942,12 @@
 
     const pad2 = (n) => String(n).padStart(2, '0');
     const defRem = () => {
-      const d = new Date(Date.now() + 3600000);
+      const d = new Date(Date.now() + 5 * 60000);
       return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     };
     const remLabel = (value) => {
       const d = new Date(value);
-      return isNaN(+d) ? 'انتخاب تاریخ و ساعت' : new Intl.DateTimeFormat('fa-IR', {
+      return isNaN(+d) ? 'انتخاب تاریخ و ساعت' : new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
         weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       }).format(d);
     };
@@ -957,38 +957,87 @@
     };
     setRemWhen(defRem());
 
-    let remSelected = new Date($('remWhen').value);
-    let remViewMonth = new Date(remSelected.getFullYear(), remSelected.getMonth(), 1);
+    const persianParts = (date) => {
+      const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+        year: 'numeric', month: 'numeric', day: 'numeric'
+      }).formatToParts(date);
+      const get = (type) => Number(parts.find((p) => p.type === type)?.value);
+      return { year: get('year'), month: get('month'), day: get('day') };
+    };
+    const persianKey = (date) => {
+      const p = persianParts(date);
+      return `${p.year}-${pad2(p.month)}`;
+    };
     const remStart = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
     const remEnd = () => { const d = remStart(); d.setDate(d.getDate() + 30); d.setHours(23,59,59,999); return d; };
     const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
+
+    const selectablePersianMonths = () => {
+      const keys = [];
+      const seen = new Set();
+      const d = remStart(), max = remEnd();
+      while (d <= max) {
+        const key = persianKey(d);
+        if (!seen.has(key)) { seen.add(key); keys.push(key); }
+        d.setDate(d.getDate() + 1);
+      }
+      return keys;
+    };
+    const persianMonthDates = (key) => {
+      const min = remStart(), max = remEnd();
+      const d = new Date(min); d.setDate(d.getDate() - 35);
+      const stop = new Date(max); stop.setDate(stop.getDate() + 35);
+      const days = [];
+      while (d <= stop) {
+        if (persianKey(d) === key) days.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+      }
+      return days;
+    };
+
+    let remSelected = new Date($('remWhen').value);
+    let remViewKey = persianKey(remSelected);
 
     function renderRemPicker() {
-      $('remMonthTitle').textContent = new Intl.DateTimeFormat('fa-IR', { month: 'long', year: 'numeric' }).format(remViewMonth);
+      const months = selectablePersianMonths();
+      if (!months.includes(remViewKey)) remViewKey = months[0];
+
+      const monthDays = persianMonthDates(remViewKey);
+      const titleDate = monthDays[Math.floor(monthDays.length / 2)] || remSelected;
+      $('remMonthTitle').textContent = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+        month: 'long', year: 'numeric'
+      }).format(titleDate);
+
       const cal = $('remCalendar'); cal.replaceChildren();
-      const y = remViewMonth.getFullYear(), m = remViewMonth.getMonth();
-      const first = new Date(y, m, 1);
-      const offset = (first.getDay() + 1) % 7;
+      const first = monthDays[0];
+      const offset = first ? (first.getDay() + 1) % 7 : 0;
       for (let i = 0; i < offset; i++) cal.append(el('span', { class: 'day-blank' }));
-      const count = new Date(y, m + 1, 0).getDate();
+
       const min = remStart(), max = remEnd();
-      for (let day = 1; day <= count; day++) {
-        const d = new Date(y, m, day);
+      for (const d of monthDays) {
+        const p = persianParts(d);
         const disabled = d < min || d > max;
-        const b = el('button', { class: 'day-btn' + (sameDay(d, remSelected) ? ' selected' : ''), type: 'button' }, Number(day).toLocaleString('fa-IR'));
+        const b = el('button', {
+          class: 'day-btn' + (sameDay(d, remSelected) ? ' selected' : ''),
+          type: 'button'
+        }, Number(p.day).toLocaleString('fa-IR'));
         b.disabled = disabled;
-        if (!disabled) b.addEventListener('click', () => { remSelected = d; renderRemPicker(); });
+        if (!disabled) b.addEventListener('click', () => {
+          remSelected = new Date(d);
+          renderRemPicker();
+        });
         cal.append(b);
       }
-      $('remMonthPrev').disabled = monthKey(new Date(y, m - 1, 1)) < monthKey(min);
-      $('remMonthNext').disabled = monthKey(new Date(y, m + 1, 1)) > monthKey(max);
+
+      const idx = months.indexOf(remViewKey);
+      $('remMonthPrev').disabled = idx <= 0;
+      $('remMonthNext').disabled = idx < 0 || idx >= months.length - 1;
     }
 
     function openRemPicker() {
       const current = new Date($('remWhen').value || defRem());
-      remSelected = isNaN(+current) ? new Date(Date.now() + 3600000) : current;
-      remViewMonth = new Date(remSelected.getFullYear(), remSelected.getMonth(), 1);
+      remSelected = isNaN(+current) ? new Date(Date.now() + 5 * 60000) : current;
+      remViewKey = persianKey(remSelected);
       $('remHour').value = String(remSelected.getHours());
       $('remMinute').value = pad2(remSelected.getMinutes());
       renderRemPicker();
@@ -999,8 +1048,16 @@
     $('remPickerClose').addEventListener('click', closeRemPicker);
     $('remPickerCancel').addEventListener('click', closeRemPicker);
     $('remPicker').addEventListener('click', (e) => { if (e.target === $('remPicker')) closeRemPicker(); });
-    $('remMonthPrev').addEventListener('click', () => { remViewMonth = new Date(remViewMonth.getFullYear(), remViewMonth.getMonth() - 1, 1); renderRemPicker(); });
-    $('remMonthNext').addEventListener('click', () => { remViewMonth = new Date(remViewMonth.getFullYear(), remViewMonth.getMonth() + 1, 1); renderRemPicker(); });
+    $('remMonthPrev').addEventListener('click', () => {
+      const months = selectablePersianMonths();
+      const idx = months.indexOf(remViewKey);
+      if (idx > 0) { remViewKey = months[idx - 1]; renderRemPicker(); }
+    });
+    $('remMonthNext').addEventListener('click', () => {
+      const months = selectablePersianMonths();
+      const idx = months.indexOf(remViewKey);
+      if (idx >= 0 && idx < months.length - 1) { remViewKey = months[idx + 1]; renderRemPicker(); }
+    });
     $('remPickerSet').addEventListener('click', () => {
       const h = Number($('remHour').value), min = Number($('remMinute').value);
       if (!Number.isInteger(h) || h < 0 || h > 23 || !Number.isInteger(min) || min < 0 || min > 59) return toast('ساعت معتبر نیست', true);
