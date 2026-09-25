@@ -2,7 +2,7 @@
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { forwardsPendingTool, mustForward } from "../_shared/gateway-route.ts";
-import { BASE, GK, RATE_LIMIT, WEBAPP_URL, admin, db, out, ready } from "./core/state.ts";
+import { BASE, GK, RK, RATE_LIMIT, WEBAPP_URL, admin, db, out, ready } from "./core/state.ts";
 import { esc, stripRepeatedIntro } from "./core/output.ts";
 import { MENUS, config, readHistory } from "./core/config.ts";
 import { reply } from "./core/conversation.ts";
@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
         if (forwardsPendingTool(p?.pending_tool)) return forward(update);
         // The menu is a shortcut, not a prerequisite for using a tool.
         const inferred = (p?.pending_tool === "chat" || !p?.pending_tool)
-          ? await selectToolIntent(text, GK, (await config()).gemini)
+          ? await selectToolIntent(text, await config(), { gemini: GK, openrouter: RK })
           : "chat";
         if (inferred === "web") return reply(m, update.update_id, "web");
         if (inferred !== "chat")

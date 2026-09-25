@@ -3,118 +3,492 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>داشبورد سعید</title>
+  <title>سعید · داشبورد</title>
   <!-- API endpoint: overridden by ?api=… in WEBAPP_URL, e.g. https://<ref>.supabase.co/functions/v1/saeed-ai-webapp -->
   <meta name="saeed-api" content="">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;800&display=swap" rel="stylesheet">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       --bg: var(--tg-theme-bg-color, #ffffff);
-      --bg2: var(--tg-theme-secondary-bg-color, #f2f3f5);
-      --text: var(--tg-theme-text-color, #16181d);
-      --hint: var(--tg-theme-hint-color, #7a7f89);
+      --bg2: var(--tg-theme-secondary-bg-color, #f1f3f6);
+      --card: var(--tg-theme-section-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #14161a);
+      --hint: var(--tg-theme-hint-color, #7d828c);
       --accent: var(--tg-theme-button-color, #2f7cf6);
+      --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
       --accent-text: var(--tg-theme-button-text-color, #ffffff);
       --danger: var(--tg-theme-destructive-text-color, #e5484d);
-      --card: var(--tg-theme-section-bg-color, var(--bg));
-      --line: color-mix(in srgb, var(--hint) 22%, transparent);
+      --danger-soft: color-mix(in srgb, var(--danger) 10%, transparent);
+      --ok: #2e9e5b;
+      --line: color-mix(in srgb, var(--hint) 20%, transparent);
+      --r: 18px;
+      color-scheme: light dark;
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg2); color: var(--text); font: 15px/1.6 Vazirmatn, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
-    header { padding: 20px 16px 8px; }
-    h1 { margin: 0; font-size: 22px; font-weight: 800; }
-    .sub { color: var(--hint); font-size: 13px; }
-    nav { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; padding: 8px 16px; background: var(--bg2); overflow-x: auto; }
-    nav button { flex: 1 0 auto; border: 0; border-radius: 999px; padding: 8px 14px; background: var(--card); color: var(--text); font: inherit; font-weight: 600; }
-    nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
-    main { padding: 8px 16px 32px; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.7 Vazirmatn, system-ui, -apple-system, sans-serif;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      overscroll-behavior-y: none;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    input, select, textarea { font: inherit; color: var(--text); }
+    svg { display: block; }
+
+    /* ---------- header ---------- */
+    header { padding: 20px 20px 4px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    header .greet { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.2px; }
+    header .date { color: var(--hint); font-size: 12.5px; margin-top: 2px; }
+    .iconbtn {
+      width: 38px; height: 38px; flex: none; border-radius: 13px; border: 1px solid var(--line);
+      background: var(--card); color: var(--hint); display: grid; place-items: center;
+      transition: transform .12s ease, color .12s ease;
+    }
+    .iconbtn:active { transform: scale(.92); color: var(--accent); }
+    .iconbtn.spin svg { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- tabs ---------- */
+    nav {
+      position: sticky; top: 0; z-index: 20; display: flex; gap: 4px; margin: 10px 16px 4px;
+      padding: 5px; border-radius: 16px; background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--line); overflow-x: auto; scrollbar-width: none;
+    }
+    nav::-webkit-scrollbar { display: none; }
+    nav button {
+      flex: 1 0 auto; border: 0; background: transparent; border-radius: 12px; padding: 8px 10px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      color: var(--hint); font-weight: 600; font-size: 13px; white-space: nowrap; transition: all .15s ease;
+    }
+    nav button svg { width: 17px; height: 17px; }
+    nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+    main { padding: 8px 16px 8px; }
     section[hidden] { display: none; }
-    .card { background: var(--card); border-radius: 16px; padding: 14px 16px; margin: 12px 0; }
-    .card h2 { margin: 0 0 8px; font-size: 16px; }
-    .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
-    .row:first-of-type { border-top: 0; }
+
+    /* ---------- cards & primitives ---------- */
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin: 10px 0; }
+    .card > h2 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--hint); display: flex; align-items: center; gap: 8px; }
+    .card > h2 svg { width: 16px; height: 16px; color: var(--accent); }
+    .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .row:first-of-type { border-top: 0; padding-top: 2px; }
     .row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-    .row small { display: block; color: var(--hint); }
+    .row small { display: block; color: var(--hint); font-size: 11.5px; margin-top: 1px; }
     .done .grow { color: var(--hint); text-decoration: line-through; }
-    .check { width: 26px; height: 26px; flex: none; border-radius: 8px; border: 2px solid var(--accent); background: transparent; color: var(--accent-text); font-size: 15px; }
-    .done .check { background: var(--accent); }
-    .x { border: 0; background: transparent; color: var(--danger); font-size: 18px; padding: 4px 6px; }
-    .empty { color: var(--hint); padding: 6px 0; }
-    .big { font-size: 26px; font-weight: 800; }
-    svg text { fill: var(--hint); font: 10px Vazirmatn, sans-serif; }
-    .bar { fill: var(--accent); }
-    .cat { margin: 8px 0; }
-    .cat .track { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 4px; }
-    .cat .fill { height: 100%; background: var(--accent); }
-    label.switch { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+    .check {
+      width: 25px; height: 25px; flex: none; border-radius: 9px; border: 2px solid var(--accent);
+      background: transparent; display: grid; place-items: center; color: var(--accent-text);
+      font-size: 14px; transition: all .15s ease;
+    }
+    .done .check { background: var(--accent); border-color: var(--accent); }
+    .x { border: 0; background: transparent; color: var(--danger); width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; transition: background .15s; }
+    .x:active { background: var(--danger-soft); }
+    .x svg, .edit svg { width: 17px; height: 17px; }
+    .edit { border: 0; background: transparent; color: var(--hint); width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; }
+    .edit:active { background: var(--accent-soft); color: var(--accent); }
+    .btn { border: 1px solid var(--line); background: var(--card); border-radius: 13px; padding: 9px 16px; font-weight: 600; font-size: 13.5px; transition: transform .12s; }
+    .btn:active { transform: scale(.96); }
+    .btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 30%, transparent); }
+    .btn.ghost { background: transparent; }
+    .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: transparent; }
+    .btn.sm { padding: 6px 12px; font-size: 12.5px; border-radius: 11px; }
+    .field {
+      width: 100%; background: var(--bg2); border: 1px solid var(--line); border-radius: 13px;
+      padding: 10px 14px; outline: none; transition: border-color .15s;
+    }
+    .field:focus { border-color: var(--accent); background: var(--card); }
+    .field::placeholder { color: color-mix(in srgb, var(--hint) 70%, transparent); }
+    textarea.field { resize: none; min-height: 44px; }
+    .addrow { display: flex; gap: 8px; align-items: center; }
+    .addrow .field { flex: 1; min-width: 0; }
+    .empty { color: var(--hint); padding: 14px 4px; text-align: center; font-size: 13.5px; }
+    .empty b { display: block; font-size: 26px; margin-bottom: 4px; font-weight: 400; }
+
+    /* ---------- stats ---------- */
+    .hero { position: relative; overflow: hidden; }
+    .hero .label { color: var(--hint); font-size: 12.5px; font-weight: 600; }
+    .hero .big { font-size: 34px; font-weight: 800; letter-spacing: -.4px; margin: 2px 0; font-feature-settings: "tnum"; }
+    .hero .sub { color: var(--hint); font-size: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 12px 14px; }
+    .stat b { display: block; font-size: 21px; font-weight: 800; font-feature-settings: "tnum"; line-height: 1.3; }
+    .stat span { color: var(--hint); font-size: 11.5px; }
+    .stat .n { color: var(--accent); }
+    .stat .d { color: var(--danger); }
+
+    /* ---------- chart ---------- */
+    .bars { width: 100%; height: 128px; }
+    .bars rect { fill: url(#barGrad); }
+    .bars rect.today { fill: var(--accent); }
+    .bars rect:hover { opacity: .85; }
+    .bars .axis { fill: var(--hint); font: 10px Vazirmatn, sans-serif; }
+    .cat { margin: 10px 0; }
+    .cat .t { display: flex; justify-content: space-between; font-size: 13px; }
+    .cat .t b { font-weight: 600; }
+    .cat .t span { color: var(--hint); font-feature-settings: "tnum"; }
+    .cat .track { height: 7px; border-radius: 4px; background: var(--bg2); margin-top: 5px; overflow: hidden; }
+    .cat .fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+
+    /* ---------- chips / segmented ---------- */
+    .seg { display: flex; gap: 6px; }
+    .seg button { flex: 1; border: 1px solid var(--line); background: var(--bg2); border-radius: 11px; padding: 6px 4px; font-size: 12px; font-weight: 600; color: var(--hint); }
+    .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+    .pill { display: inline-flex; align-items: center; gap: 4px; background: var(--bg2); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; color: var(--hint); }
+
+    /* ---------- toast & loading ---------- */
+    #toast {
+      position: fixed; inset-inline: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 50;
+      padding: 12px 16px; border-radius: 14px; background: var(--text); color: var(--bg);
+      opacity: 0; transform: translateY(8px); transition: all .25s ease; pointer-events: none; text-align: center; font-size: 13.5px;
+      max-width: 420px; margin-inline: auto;
+    }
+    #toast.show { opacity: .96; transform: none; }
+    #toast.err { background: var(--danger); color: #fff; }
+    .loading { color: var(--hint); text-align: center; padding: 60px 0; }
+    .loading .dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+    .loading .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: bounce 1s infinite ease-in-out; }
+    .loading .dots i:nth-child(2) { animation-delay: .15s; }
+    .loading .dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes bounce { 0%, 80%, 100% { transform: scale(.6); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+    .fade { animation: fade .3s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+
+    /* ---------- reminders timeline ---------- */
+    .tl { position: relative; padding-inline-start: 4px; }
+    .tl .when { flex: none; width: 74px; text-align: center; background: var(--bg2); border-radius: 12px; padding: 6px 4px; }
+    .tl .when b { display: block; font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
+    .tl .when span { font-size: 10.5px; color: var(--hint); }
+
+    .code { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    .code b { font-size: 24px; letter-spacing: 6px; font-weight: 800; font-feature-settings: "tnum"; color: var(--accent); direction: ltr; }
+    .note { color: var(--hint); font-size: 12px; margin-top: 8px; line-height: 1.8; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .footer-actions { display: flex; gap: 8px; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; }
+    label.switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px; }
     label.switch:first-of-type { border-top: 0; }
-    select, input[type=checkbox] { accent-color: var(--accent); }
-    select { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-    #toast { position: fixed; inset-inline: 16px; bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; text-align: center; }
-    #toast.show { opacity: .95; }
-    .loading { color: var(--hint); text-align: center; padding: 40px 0; }
+    label.switch .desc { color: var(--hint); font-size: 11.5px; display: block; }
+    input[type=checkbox] { accent-color: var(--accent); width: 20px; height: 20px; flex: none; }
+    select.field { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--hint) 50%), linear-gradient(135deg, var(--hint) 50%, transparent 50%); background-position: calc(18px) calc(1em + 2px), calc(23px) calc(1em + 2px); background-size: 5px 5px; background-repeat: no-repeat; padding-inline-end: 36px; }
+    .inline-form { display: flex; flex-direction: column; gap: 8px; }
   </style>
 </head>
 <body>
   <header>
-    <h1>داشبورد سعید 😎</h1>
-    <div class="sub" id="tz"></div>
+    <div>
+      <h1 class="greet" id="greet">سلام حاجی 👋</h1>
+      <div class="date" id="date"></div>
+    </div>
+    <button class="iconbtn" id="refresh" aria-label="به‌روزرسانی"></button>
   </header>
-  <nav role="tablist">
-    <button role="tab" data-tab="today" aria-selected="true">امروز</button>
-    <button role="tab" data-tab="money" aria-selected="false">خرج‌ها</button>
-    <button role="tab" data-tab="shop" aria-selected="false">خرید</button>
-    <button role="tab" data-tab="settings" aria-selected="false">تنظیمات</button>
-  </nav>
+
+  <nav role="tablist" id="tabs"></nav>
+
   <main>
-    <div class="loading" id="loading">در حال بارگذاری…</div>
-    <section id="today" hidden>
-      <div class="card"><h2>⏰ یادآورهای پیش رو</h2><div id="reminders"></div></div>
-      <div class="card"><h2>✅ تسک‌ها</h2><div id="tasks"></div></div>
-    </section>
-    <section id="money" hidden>
-      <div class="card"><h2>💰 ۳۰ روز گذشته</h2><div class="big" id="total"></div><div id="chart"></div></div>
-      <div class="card"><h2>دسته‌ها</h2><div id="cats"></div></div>
-    </section>
-    <section id="shop" hidden>
-      <div class="card"><h2 id="shopTitle">🛒 لیست خرید</h2><div id="shopping"></div></div>
-    </section>
-    <section id="settings" hidden>
-      <div class="card"><h2>☀️ صبح‌نامه</h2>
-        <label class="switch">فعال <input type="checkbox" id="b_enabled"></label>
-        <label class="switch">ساعت ارسال <select id="b_hour"></select></label>
-        <label class="switch">نسخه‌ی صوتی 🔊 <input type="checkbox" id="b_voice"></label>
-        <div class="sub" id="city"></div>
+    <div class="loading" id="loading"><div class="dots"><i></i><i></i><i></i></div>در حال گرفتن برنامه‌ات…</div>
+    <div id="err" hidden class="empty"><b>🙈</b><span id="errText"></span><div style="margin-top:10px"><button class="btn primary" onclick="load()">دوباره تلاش کن</button></div></div>
+
+    <!-- ==================== امروز ==================== -->
+    <section id="tab-today" hidden>
+      <div class="card hero fade">
+        <div class="label">خرج امروز</div>
+        <div class="big" id="todaySpent">۰ تومان</div>
+        <div class="sub" id="todaySub"></div>
+        <div style="margin-top:10px" id="miniChart"></div>
       </div>
-      <div class="card"><h2>📅 خلاصه‌ی هفته</h2>
-        <label class="switch">هر جمعه ساعت ۸ شب <input type="checkbox" id="b_weekly"></label>
+      <div class="stats" id="stats"></div>
+      <div class="card fade">
+        <h2 id="quickTitle">⚡ ثبت سریع خرج</h2>
+        <div class="addrow">
+          <input class="field" id="quickInput" placeholder="مثلاً: میوه ۹۰۰ هزار تومان" enterkeyhint="done">
+          <button class="btn primary" id="quickBtn">ثبت</button>
+        </div>
+        <div class="note">همین‌جا بنویس؛ اعداد حروفی هم می‌فهمم — «تاکسی پنجاه هزار تومان». چندتایی هم با ویرگول جدا کن.</div>
+      </div>
+      <div class="card"><h2>💰 آخرین خرج‌ها</h2><div id="recentExpenses"></div></div>
+      <div class="card"><h2>✅ کارهای باز</h2><div id="todayTasks"></div></div>
+      <div class="card"><h2>⏰ یادآورهای پیش رو</h2><div id="todayReminders"></div></div>
+    </section>
+
+    <!-- ==================== خرج‌ها ==================== -->
+    <section id="tab-money" hidden>
+      <div class="card hero fade">
+        <div class="label">جمع خرج ۳۰ روز گذشته</div>
+        <div class="big" id="moneyTotal">۰ تومان</div>
+        <div class="sub" id="moneyCount"></div>
+      </div>
+      <div class="card">
+        <h2>📊 روزانه (۱۴ روز)</h2>
+        <svg class="bars" id="chart" viewBox="0 0 320 128" preserveAspectRatio="none" role="img" aria-label="نمودار خرج روزانه"></svg>
+        <div class="sub" style="color:var(--hint);font-size:11.5px;text-align:center;margin-top:4px" id="chartHint">روی هر میله بزن تا عددش رو ببینی</div>
+      </div>
+      <div class="card"><h2>🏷 دسته‌ها</h2><div id="cats"></div></div>
+      <div class="card">
+        <h2>➕ ثبت خرج جدید</h2>
+        <div class="inline-form">
+          <input class="field" id="expDesc" placeholder="چی خریدی؟ مثلاً: خرید میوه">
+          <div class="grid2">
+            <input class="field" id="expAmount" inputmode="numeric" placeholder="مبلغ">
+            <div class="seg" id="expUnit">
+              <button data-u="1000000" aria-pressed="false">میلیون</button>
+              <button data-u="1000" aria-pressed="true">هزار</button>
+              <button data-u="1" aria-pressed="false">تومان</button>
+            </div>
+          </div>
+          <button class="btn primary" id="expAdd">ثبت کن</button>
+        </div>
+      </div>
+      <div class="card"><h2>🧾 خرج‌های ۳۰ روز</h2><div id="expList"></div></div>
+    </section>
+
+    <!-- ==================== کارها ==================== -->
+    <section id="tab-tasks" hidden>
+      <div class="card">
+        <h2>➕ کار جدید</h2>
+        <div class="addrow">
+          <input class="field" id="taskInput" placeholder="مثلاً: تماس با بانک" enterkeyhint="done">
+          <button class="btn primary" id="taskAdd">ثبت</button>
+        </div>
+      </div>
+      <div class="card"><h2>✅ کارهای من</h2><div id="taskList"></div>
+        <div class="footer-actions" id="taskFooter" hidden>
+          <button class="btn sm ghost" id="taskClearDone">🧹 پاک‌کردن انجام‌شده‌ها</button>
+          <button class="btn sm danger" id="taskClearAll">🗑 حذف همه</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== یادآور ==================== -->
+    <section id="tab-remind" hidden>
+      <div class="card">
+        <h2>➕ یادآور جدید</h2>
+        <div class="inline-form">
+          <input class="field" id="remNote" placeholder="چی یادت بمونه؟ مثلاً: جلسه با تیم">
+          <div class="grid2">
+            <input class="field" id="remWhen" type="datetime-local">
+            <button class="btn primary" id="remAdd">ثبت یادآور</button>
+          </div>
+          <div class="note">ساعت به وقت دستگاه خودته؛ حداکثر ۳۰ روز جلوتر.</div>
+        </div>
+      </div>
+      <div class="card"><h2>⏰ یادآورهای فعال</h2><div id="remList"></div></div>
+    </section>
+
+    <!-- ==================== خرید ==================== -->
+    <section id="tab-shop" hidden>
+      <div class="card">
+        <h2>➕ به لیست خرید اضافه کن</h2>
+        <div class="addrow">
+          <input class="field" id="shopInput" placeholder="چندتایی؟ مثلاً: شیر، نان، تخم‌مرغ" enterkeyhint="done">
+          <button class="btn primary" id="shopAdd">ثبت</button>
+        </div>
+      </div>
+      <div class="card"><h2 id="shopTitle">🛒 لیست خرید</h2><div id="shopList"></div>
+        <div class="footer-actions" id="shopFooter" hidden><button class="btn sm ghost" id="shopClearDone">🧹 پاک‌کردن خریده‌شده‌ها</button></div>
+      </div>
+      <div class="card" id="shareCard">
+        <h2>👨‍👩‍👧 لیست مشترک خانوادگی</h2>
+        <div id="shareBox"></div>
+      </div>
+    </section>
+
+    <!-- ==================== بیشتر ==================== -->
+    <section id="tab-more" hidden>
+      <div class="card">
+        <h2>☀️ صبح‌نامه</h2>
+        <label class="switch"><span>فعال<span class="desc">هر روز صبح برنامه‌ات + هوا رو می‌فرستم</span></span><input type="checkbox" id="b_enabled"></label>
+        <label class="switch"><span>ساعت ارسال<span class="desc">به وقت منطقه خودت</span></span><select class="field" id="b_hour" style="width:110px"></select></label>
+        <label class="switch"><span>نسخه صوتی 🔊<span class="desc">یه ویس کوتاه پرانرژی هم می‌فرستم</span></span><input type="checkbox" id="b_voice"></label>
+        <label class="switch"><span>خلاصه هفته 📅<span class="desc">هر جمعه ساعت ۸ شب</span></span><input type="checkbox" id="b_weekly"></label>
+        <div class="addrow" style="margin-top:10px">
+          <input class="field" id="cityInput" placeholder="شهرت؟ مثلاً: رشت">
+          <button class="btn sm" id="citySet">ذخیره شهر</button>
+        </div>
+        <div class="note" id="cityNow"></div>
+      </div>
+      <div class="card">
+        <h2>🕰 منطقه زمانی</h2>
+        <div class="addrow">
+          <input class="field" id="tzInput" placeholder="مثلاً: Europe/Berlin">
+          <button class="btn sm" id="tzSet">ذخیره</button>
+        </div>
+        <div class="note" id="tzNow"></div>
+      </div>
+      <div class="card">
+        <h2>🧠 حافظه بلندمدت</h2>
+        <div class="addrow">
+          <input class="field" id="memInput" placeholder="چی یادم بمونه؟ مثلاً: قهوه بدون شکر" enterkeyhint="done">
+          <button class="btn primary" id="memAdd">ثبت</button>
+        </div>
+        <div id="memList" style="margin-top:6px"></div>
+        <div class="footer-actions" id="memFooter" hidden><button class="btn sm danger" id="memClear">🗑 پاک‌کردن همه</button></div>
+      </div>
+      <div class="card">
+        <h2>🔔 هشدارها</h2>
+        <div class="inline-form" style="margin-bottom:8px">
+          <select class="field" id="watchKind"></select>
+          <div class="grid2">
+            <input class="field" id="watchThreshold" inputmode="numeric" placeholder="حد به تومان">
+            <button class="btn primary" id="watchAdd">ثبت هشدار</button>
+          </div>
+          <div class="note">نرخ‌ها هر ۱۰ دقیقه از منبع معتبر چک می‌شن؛ بارون هر روز ساعت ۷ صبح.</div>
+        </div>
+        <div id="watchList"></div>
+      </div>
+      <div class="card">
+        <h2>ℹ️ درباره</h2>
+        <div class="note" style="margin-top:0">همه‌ی این‌ها از توی چت با ربات هم قابل انجامن؛ مثلاً «چند تا هزینه ثبت کن حاجی» بعد لیستش، یا «هزینه ثبت کن» با ویس. خروجی کامل مکالمه: دستور /md all.</div>
       </div>
     </section>
   </main>
+
   <div id="toast" role="status" aria-live="polite"></div>
   <script>
+    'use strict';
     const tg = window.Telegram?.WebApp;
     tg?.ready(); tg?.expand();
+    tg?.setHeaderColor?.('bg_color'); tg?.setBackgroundColor?.('bg_color');
+
     const params = new URLSearchParams(location.search);
     const API = params.get('api') || document.querySelector('meta[name="saeed-api"]').content;
-    const fa = (n) => Number(n).toLocaleString('fa-IR');
-    const toman = (n) => fa(n) + ' تومان';
     const $ = (id) => document.getElementById(id);
     const el = (tag, attrs = {}, ...kids) => {
       const node = document.createElement(tag);
-      for (const [k, v] of Object.entries(attrs)) k.startsWith('on') ? node.addEventListener(k.slice(2), v) : node.setAttribute(k, v);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+        else if (k === 'class') node.className = v;
+        else node.setAttribute(k, v);
+      }
       for (const kid of kids) node.append(kid);
       return node;
     };
     let state = null;
+    let busy = false;
 
-    function toast(text) {
-      $('toast').textContent = text; $('toast').classList.add('show');
-      clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('show'), 2200);
+    /* ---------- icons (minimal stroke set) ---------- */
+    const I = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
+    const ICON = {
+      today: I('<path d="M3 12h3.5L9 6l3.5 12L15 12h6"/>'),
+      money: I('<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/>'),
+      tasks: I('<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.5l2.5 2.5 5-5.5"/>'),
+      remind: I('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+      shop: I('<path d="M4 5h2l2.2 10.5a2 2 0 0 0 2 1.5h7.3a2 2 0 0 0 2-1.6L21 8H6.5"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>'),
+      more: I('<path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/>'),
+      trash: I('<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/>'),
+      pencil: I('<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/>'),
+      refresh: I('<path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 3v4h-4"/>'),
+      copy: I('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
+      check: I('<path d="M5 12.5l4.5 4.5L19 7"/>'),
+      share: I('<circle cx="6" cy="12" r="2.5"/><circle cx="17" cy="6" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="M8.3 10.8l6.4-3.6M8.3 13.2l6.4 3.6"/>'),
+      wallet: I('<path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1h-6a3 3 0 0 0 0 6h6v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M13 10h8v4h-8a2 2 0 0 1 0-4z"/>'),
+    };
+
+    /* ---------- numbers & dates ---------- */
+    const fa = (n) => Number(n || 0).toLocaleString('fa-IR');
+    const compact = (n) => {
+      n = Number(n || 0);
+      if (n >= 1e9) return (Math.round(n / 1e8) / 10).toLocaleString('fa-IR') + ' میلیارد';
+      if (n >= 1e6) return (Math.round(n / 1e5) / 10).toLocaleString('fa-IR') + ' میلیون';
+      if (n >= 1e3) return (Math.round(n / 1e2) / 10).toLocaleString('fa-IR') + ' هزار';
+      return fa(n);
+    };
+    const toman = (n) => compact(n) + ' تومان';
+    const fa2en = (s) => String(s).replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+
+    const tzFmt = (opts) => new Intl.DateTimeFormat('fa-IR', { timeZone: state?.timezone || 'Asia/Tehran', ...opts });
+    const dayLabel = (iso) => {
+      const tz = state?.timezone || 'Asia/Tehran';
+      const now = new Date();
+      const same = (a, b) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(a) ===
+        new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(b);
+      const d = new Date(iso);
+      if (same(d, now)) return 'امروز';
+      if (same(d, new Date(now.getTime() - 86400000))) return 'دیروز';
+      return tzFmt({ weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+    };
+
+    /* ---------- smart quick-expense parser (client port of the bot engine) ---------- */
+    const NUMW = { صفر: 0, یک: 1, یه: 1, دو: 2, سه: 3, چهار: 4, پنج: 5, شش: 6, شیش: 6, هفت: 7, هشت: 8, نه: 9, ده: 10, یازده: 11, دوازده: 12, سیزده: 13, چهارده: 14, پانزده: 15, پونزده: 15, شانزده: 16, هفده: 17, هجده: 18, نوزده: 19, بیست: 20, سی: 30, چهل: 40, پنجاه: 50, شصت: 60, هفتاد: 70, هشتاد: 80, نود: 90, صد: 100, دویست: 200, سیصد: 300, چهارصد: 400, پانصد: 500, ششصد: 600, هفتصد: 700, هشتصد: 800, نهصد: 900, نیم: 0.5 };
+    const SCALES = { هزار: 1000, میلیون: 1e6, میلیارد: 1e9 };
+    const CURS = new Set(['تومان', 'تومن', 'ریال']);
+    const cw = (w) => String(w || '').replace(/[\u200c\u200f\u200e]/g, '').replace(/^[.،؛,!:؟?«»"'\-–]+|[.،؛,!:؟?«»"'\-–]+$/g, '');
+    function evalRun(run) {
+      let total = 0, cur = 0, saw = false;
+      for (let k = 0; k < run.length; k++) {
+        const w = cw(run[k]);
+        if (!w || w === 'و') continue;
+        if (w in SCALES) {
+          const half = cw(run[k + 1] || '') === 'نیم';
+          total += (cur || 1) * SCALES[w];
+          if (half) { total += 0.5 * SCALES[w]; k++; }
+          cur = 0;
+        } else if (w in NUMW) { cur += NUMW[w]; saw = true; }
+        else return null;
+      }
+      return saw || total ? total + cur : null;
+    }
+    function amtAt(words, i) {
+      const at = (k) => cw(words[k] || '');
+      const w = at(i);
+      if (!w) return null;
+      if (/^[\d۰-۹٠-٩]/.test(w)) {
+        const t = fa2en(w).replace(/[,٬،\s]/g, '');
+        if (!/^\d{1,12}([.]\d{1,3})?$/.test(t)) return null;
+        let v = Number(t), used = 1;
+        if (at(i + 1) in SCALES) { v *= SCALES[at(i + 1)]; used = 2; }
+        return CURS.has(at(i + used)) ? { v, used: used + 1, cur: at(i + used) } : null;
+      }
+      if (!(w in NUMW) && !(w in SCALES)) return null;
+      const run = []; let j = i;
+      while (j < words.length) {
+        const x = at(j);
+        if (x === 'و') {
+          const nx = at(j + 1);
+          if (nx in NUMW || nx in SCALES) { run.push(words[j]); j++; continue; }
+          break;
+        }
+        if (x in NUMW || x in SCALES) { run.push(words[j]); j++; } else break;
+      }
+      if (!CURS.has(at(j))) return null;
+      const v = evalRun(run);
+      return v && v > 0 ? { v, used: j - i + 1, cur: at(j) } : null;
+    }
+    /** «میوه ۹۰۰ هزار تومان، برنج دو میلیون تومان» → [{desc, amount}] */
+    function parseQuickExpenses(text) {
+      const t = String(text || '').trim();
+      if (!t) return { items: [], missing: false };
+      const pieces = t.split(/\n+|[،؛,;]/).map((x) => x.trim()).filter(Boolean);
+      const items = [];
+      let missing = false;
+      for (const piece of pieces) {
+        const words = fa2en(piece).replace(/([\d۰-۹٠-٩][\d۰-۹٠-۹.,٬،٫]*)/gu, ' $1 ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const desc = []; let i = 0;
+        while (i < words.length) {
+          const m = amtAt(words, i);
+          if (m) {
+            let d = desc.join(' '), used = m.used;
+            if (!d) {
+              const rest = []; let j = i + m.used;
+              while (j < words.length && !amtAt(words, j)) { rest.push(words[j]); j++; }
+              d = rest.join(' '); used = j - i;
+            }
+            d = d.replace(/^(?:و|با|هم|این)\s+/, '').replace(/^[«"'\-–]+|[»"'\-–.,!؛]+$/g, '').trim();
+            let amount = Math.round(m.v);
+            if (m.cur === 'ریال') { if (amount % 10) { missing = true; amount = 0; } else amount /= 10; }
+            if (amount > 0 && amount < 1e12 && d.length >= 2) items.push({ desc: d, amount });
+            desc.length = 0; i += used;
+          } else { desc.push(words[i]); i++; }
+        }
+        if (!items.length && /[\d۰-۹٠-٩]|هزار|میلیون/.test(fa2en(piece))) missing = true;
+      }
+      return { items, missing };
     }
 
+    /* ---------- api ---------- */
     async function call(action, extra = {}) {
       if (!API) throw new Error('آدرس API تنظیم نشده');
       const r = await fetch(API, {
@@ -126,81 +500,419 @@
       if (!r.ok) throw new Error(r.status === 401 ? 'فقط از داخل تلگرام باز کن' : r.status === 403 ? 'دسترسی نداری' : body.error || 'خطا');
       return body;
     }
-
+    function toast(text, isErr = false) {
+      const t = $('toast');
+      t.textContent = text; t.className = 'show' + (isErr ? ' err' : '');
+      clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 2400);
+    }
     async function act(action, extra, okText) {
+      if (busy) return;
+      busy = true;
       try {
         tg?.HapticFeedback?.impactOccurred('light');
-        state = await call(action, extra); render();
+        const body = await call(action, extra);
+        state = body;
+        render();
         if (okText) toast(okText);
-      } catch (e) { toast('🙈 ' + e.message); }
+        if (body.code) shareCode(body.code);
+      } catch (e) { toast(e.message || String(e), true); }
+      finally { busy = false; }
     }
-
-    function render() {
-      $('loading').hidden = true;
-      $('tz').textContent = 'منطقه زمانی: ' + state.timezone_label;
-      const fmt = new Intl.DateTimeFormat('fa-IR', { timeZone: state.timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
-
-      const rem = $('reminders'); rem.replaceChildren();
-      if (!state.reminders.length) rem.append(el('div', { class: 'empty' }, 'یادآور فعالی نداری.'));
-      for (const r of state.reminders)
-        rem.append(el('div', { class: 'row' },
-          el('div', { class: 'grow' }, r.note, el('small', {}, fmt.format(new Date(r.remind_at)) + (r.repeat_rule !== 'none' ? ' · 🔁' : ''))),
-          el('button', { class: 'x', 'aria-label': 'لغو', onclick: () => act('reminder_cancel', { id: r.id }, 'لغو شد') }, '✕')));
-
-      const tasks = $('tasks'); tasks.replaceChildren();
-      if (!state.tasks.length) tasks.append(el('div', { class: 'empty' }, 'تسکی نداری؛ توی چت بگو «تسک بساز …».'));
-      for (const t of state.tasks)
-        tasks.append(el('div', { class: 'row' + (t.done ? ' done' : '') },
-          el('button', { class: 'check', 'aria-label': 'انجام شد', onclick: () => act('task_toggle', { id: t.id }) }, t.done ? '✓' : ''),
-          el('div', { class: 'grow' }, t.task),
-          el('button', { class: 'x', 'aria-label': 'حذف', onclick: () => act('task_delete', { id: t.id }, 'حذف شد') }, '🗑')));
-
-      $('total').textContent = toman(state.expenses.total);
-      const days = state.expenses.days, max = Math.max(1, ...days.map((d) => d.amount));
-      const w = 300, h = 110, bw = w / days.length;
-      const svg = ['<svg viewBox="0 0 ' + w + ' ' + (h + 14) + '" width="100%" role="img" aria-label="نمودار خرج روزانه">'];
-      days.forEach((d, i) => {
-        const bh = Math.round((d.amount / max) * h);
-        svg.push('<rect class="bar" rx="2" x="' + (w - (i + 1) * bw + 1) + '" y="' + (h - bh) + '" width="' + (bw - 2) + '" height="' + Math.max(bh, d.amount ? 2 : 0) + '"><title>' + d.day + ': ' + toman(d.amount) + '</title></rect>');
-      });
-      svg.push('<text x="' + (w - 2) + '" y="' + (h + 12) + '" text-anchor="start">۳۰ روز پیش</text><text x="2" y="' + (h + 12) + '" text-anchor="end">امروز</text></svg>');
-      $('chart').innerHTML = svg.join('');
-      const cats = $('cats'); cats.replaceChildren();
-      const top = state.expenses.categories[0]?.amount || 1;
-      if (!state.expenses.categories.length) cats.append(el('div', { class: 'empty' }, 'هنوز خرجی ثبت نکردی؛ مثلاً بنویس «ناهار ۴۸۰ هزار تومان».'));
-      for (const c of state.expenses.categories) {
-        const fill = el('div', { class: 'fill' }); fill.style.width = Math.round((c.amount / top) * 100) + '%';
-        cats.append(el('div', { class: 'cat' }, el('div', {}, c.name + ' — ' + toman(c.amount)), el('div', { class: 'track' }, fill)));
+    async function load() {
+      $('err').hidden = true;
+      $('loading').hidden = false;
+      try {
+        state = await call('summary');
+        show(tab);
+        $('loading').hidden = true;
+      } catch (e) {
+        $('loading').hidden = true;
+        $('errText').textContent = e.message || String(e);
+        $('err').hidden = false;
       }
+    }
 
-      $('shopTitle').textContent = state.shopping.shared ? '🛒 لیست خرید مشترک 👨‍👩‍👧' : '🛒 لیست خرید';
-      const shop = $('shopping'); shop.replaceChildren();
-      if (!state.shopping.items.length) shop.append(el('div', { class: 'empty' }, 'خالیه؛ توی چت بگو «به لیست خرید اضافه کن شیر، نان».'));
-      for (const s of state.shopping.items)
-        shop.append(el('div', { class: 'row' + (s.done ? ' done' : '') },
-          el('button', { class: 'check', 'aria-label': 'خریدم', onclick: () => act('shop_toggle', { id: s.id }) }, s.done ? '✓' : ''),
-          el('div', { class: 'grow' }, s.item)));
+    /* ---------- tabs ---------- */
+    const TABS = [
+      ['today', 'امروز', ICON.today],
+      ['money', 'خرج‌ها', ICON.money],
+      ['tasks', 'کارها', ICON.tasks],
+      ['remind', 'یادآور', ICON.remind],
+      ['shop', 'خرید', ICON.shop],
+      ['more', 'بیشتر', ICON.more],
+    ];
+    let tab = 'today';
+    function show(name) {
+      tab = name;
+      for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+      for (const s of document.querySelectorAll('main section')) s.hidden = s.id !== 'tab-' + name || !state;
+      const sec = $('tab-' + name);
+      if (state && sec) { sec.classList.add('fade'); render(); }
+    }
+    for (const [id, label, icon] of TABS) {
+      $('tabs').append(el('button', { role: 'tab', 'data-tab': id, 'aria-selected': String(id === 'today'), onclick: () => show(id) }, icon, label));
+    }
 
+    /* ---------- confirm (native when available) ---------- */
+    const confirmBox = (msg) => new Promise((res) => {
+      if (tg?.showConfirm) tg.showConfirm(msg, (ok) => res(!!ok), () => res(false));
+      else res(window.confirm(msg));
+    });
+
+    /* ---------- chart ---------- */
+    function buildBars(days, { height = 128, mini = false } = {}) {
+      const svg = $('miniChart');
+      const host = mini ? svg : $('chart');
+      if (!host) return;
+      const w = Math.max(host.clientWidth || 320, 240);
+      const data = days.slice(-14);
+      const max = Math.max(1, ...data.map((d) => d.amount));
+      const pad = mini ? 2 : 6;
+      const bw = (w - pad * 2) / data.length;
+      const h = height - (mini ? 0 : 16);
+      let out = `<defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".95"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".38"/></linearGradient></defs>`;
+      data.forEach((d, i) => {
+        const bh = d.amount ? Math.max(Math.round((d.amount / max) * h), mini ? 3 : 4) : 0;
+        const x = w - pad - (i + 1) * bw + 1.5;
+        const today = i === data.length - 1;
+        out += `<rect x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${(bw - 3).toFixed(1)}" height="${bh}" rx="${mini ? 2 : 3.5}" class="${today ? 'today' : ''}" data-i="${i}"><title>${d.day}: ${toman(d.amount)}</title></rect>`;
+      });
+      if (!mini) {
+        out += `<text class="axis" x="${w - 2}" y="${height - 3}" text-anchor="start">۱۴ روز پیش</text><text class="axis" x="2" y="${height - 3}" text-anchor="end">امروز</text>`;
+      }
+      host.setAttribute('viewBox', `0 0 ${w} ${height}`);
+      host.style.height = (mini ? 44 : height) + 'px';
+      host.innerHTML = out;
+      if (!mini) {
+        for (const r of host.querySelectorAll('rect')) {
+          r.addEventListener('click', () => {
+            const d = data[Number(r.dataset.i)];
+            $('chartHint').textContent = `${dayLabel(d.day + 'T12:00:00')}: ${toman(d.amount)}`;
+            tg?.HapticFeedback?.selectionChanged?.();
+          });
+        }
+      }
+    }
+
+    /* ---------- renderers ---------- */
+    function row2({ done = false, main, sub = '', checkLabel, onCheck, onEdit, onDel, delLabel = 'حذف' }) {
+      const row = el('div', { class: 'row' + (done ? ' done' : '') });
+      if (onCheck) row.append(el('button', { class: 'check', 'aria-label': checkLabel || 'انجام شد', onclick: onCheck }, done ? '✓' : ''));
+      const grow = el('div', { class: 'grow' }, main, sub ? el('small', {}, sub) : '');
+      row.append(grow);
+      if (onEdit) row.append(el('button', { class: 'edit', 'aria-label': 'ویرایش', onclick: onEdit }, ICON.pencil));
+      if (onDel) row.append(el('button', { class: 'x', 'aria-label': delLabel, onclick: onDel }, ICON.trash));
+      return row;
+    }
+
+    function renderToday() {
+      const t = state.today;
+      $('todaySpent').textContent = toman(t.spent);
+      const y = state.expenses.days.at(-2)?.amount || 0;
+      $('todaySub').textContent = y > 0
+        ? (t.spent > y ? `↑ ${fa(Math.round(((t.spent - y) / y) * 100))}٪ بیشتر از دیروز` : t.spent < y ? `↓ ${fa(Math.round(((y - t.spent) / y) * 100))}٪ کمتر از دیروز` : 'مثل دیروز')
+        : 'روز خوبی برای شروعه ✨';
+      buildBars(state.expenses.days, { mini: true, height: 46 });
+      $('stats').replaceChildren(
+        el('div', { class: 'stat' }, el('b', { class: 'n' }, fa(t.tasks_open)), el('span', {}, 'کار باز')),
+        el('div', { class: 'stat' }, el('b', { class: 'd' }, fa(t.shopping_open)), el('span', {}, 'قلم خرید باز')),
+        el('div', { class: 'stat' }, el('b', {}, t.next_reminder ? tzFmt({ hour: '2-digit', minute: '2-digit' }).format(new Date(t.next_reminder.at)) : '—'), el('span', {}, 'یادآور بعدی')),
+      );
+      const recent = $('recentExpenses'); recent.replaceChildren();
+      if (!state.expenses.list.length) recent.append(el('div', { class: 'empty' }, el('b', {}, '💸'), 'هنوز خرجی ثبت نکردی.'));
+      for (const x of state.expenses.list.slice(0, 3)) {
+        recent.append(row2({
+          main: x.description, sub: dayLabel(x.created_at) + ' · ' + toman(x.amount),
+          onDel: () => act('expense_delete', { id: x.id }, 'پاک شد'),
+        }));
+      }
+      const open = state.tasks.filter((x) => !x.done);
+      const tt = $('todayTasks'); tt.replaceChildren();
+      if (!open.length) tt.append(el('div', { class: 'empty' }, el('b', {}, '🎉'), 'کاری باز نداری!'));
+      for (const x of open.slice(0, 4)) {
+        tt.append(row2({
+          main: x.task, onCheck: () => act('task_toggle', { id: x.id }, 'انجام شد ✅'),
+          onDel: () => act('task_delete', { id: x.id }, 'پاک شد'),
+        }));
+      }
+      if (open.length > 4) tt.append(el('div', { class: 'pill', style: 'margin-top:8px' }, `و ${fa(open.length - 4)} مورد دیگه — تب «کارها»`));
+      const tr = $('todayReminders'); tr.replaceChildren();
+      if (!state.reminders.length) tr.append(el('div', { class: 'empty' }, el('b', {}, '⏰'), 'یادآور فعالی نداری.'));
+      for (const r of state.reminders.slice(0, 3)) {
+        tr.append(row2({
+          main: r.note, sub: tzFmt({ weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(r.remind_at)) + (r.repeat_rule !== 'none' ? ' · 🔁' : ''),
+          onDel: () => act('reminder_cancel', { id: r.id }, 'لغو شد'),
+        }));
+      }
+    }
+
+    function renderMoney() {
+      $('moneyTotal').textContent = toman(state.expenses.total);
+      const withUnit = state.expenses.list.length;
+      $('moneyCount').textContent = withUnit ? `${fa(withUnit)} ثبت در ۳۰ روز گذشته${withUnit === 60 ? ' (۶۰ مورد اخیر)' : ''}` : 'هنوز چیزی ثبت نشده';
+      buildBars(state.expenses.days, { height: 128 });
+      const cats = $('cats'); cats.replaceChildren();
+      if (!state.expenses.categories.length) cats.append(el('div', { class: 'empty' }, el('b', {}, '🏷'), 'با ثبت خرج، دسته‌بندی‌ها رو اینجا می‌بینیم.'));
+      const top = state.expenses.categories[0]?.amount || 1;
+      for (const c of state.expenses.categories) {
+        const fill = el('div', { class: 'fill' }); fill.style.width = Math.max(4, Math.round((c.amount / top) * 100)) + '%';
+        cats.append(el('div', { class: 'cat' }, el('div', { class: 't' }, el('b', {}, c.name), el('span', {}, toman(c.amount))), el('div', { class: 'track' }, fill)));
+      }
+      const list = $('expList'); list.replaceChildren();
+      if (!state.expenses.list.length) list.append(el('div', { class: 'empty' }, el('b', {}, '🧾'), 'اولین خرجت رو از فرم بالا ثبت کن.'));
+      let lastDay = '';
+      for (const x of state.expenses.list) {
+        const d = dayLabel(x.created_at);
+        if (d !== lastDay) { list.append(el('div', { class: 'pill', style: 'margin:12px 0 2px' }, d)); lastDay = d; }
+        list.append(row2({
+          main: x.description, sub: toman(x.amount),
+          onDel: () => act('expense_delete', { id: x.id }, 'پاک شد'),
+        }));
+      }
+    }
+
+    function renderTasks() {
+      const open = state.tasks.filter((x) => !x.done);
+      const done = state.tasks.filter((x) => x.done);
+      const list = $('taskList'); list.replaceChildren();
+      if (!state.tasks.length) list.append(el('div', { class: 'empty' }, el('b', {}, '✅'), 'هنوز کاری ثبت نکردی؛ بالا بنویس.'));
+      const editTask = (x) => {
+        const row = row2({ main: '', onCheck: () => act('task_toggle', { id: x.id }) });
+        const input = el('input', { class: 'field', value: x.task, style: 'padding:8px 12px' });
+        input.value = x.task;
+        const save = () => act('task_edit', { id: x.id, text: input.value.trim() }, 'اصلاح شد');
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+        row.querySelector('.grow').replaceChildren(input);
+        row.append(el('button', { class: 'btn sm primary', onclick: save }, 'ذخیره'));
+        list.replaceChild(row, [...list.children].find((c) => c.dataset.id === String(x.id)) || row);
+      };
+      for (const x of open) {
+        const r = row2({
+          main: x.task,
+          onCheck: () => act('task_toggle', { id: x.id }, 'انجام شد ✅'),
+          onEdit: () => editTask(x),
+          onDel: () => act('task_delete', { id: x.id }, 'پاک شد'),
+        });
+        r.dataset.id = x.id;
+        list.append(r);
+      }
+      if (done.length) list.append(el('div', { class: 'pill', style: 'margin:12px 0 2px' }, `انجام‌شده (${fa(done.length)})`));
+      for (const x of done) {
+        const r = row2({
+          done: true, main: x.task,
+          onCheck: () => act('task_toggle', { id: x.id }, 'برگشت به باز'),
+          onDel: () => act('task_delete', { id: x.id }, 'پاک شد'),
+        });
+        r.dataset.id = x.id;
+        list.append(r);
+      }
+      $('taskFooter').hidden = !state.tasks.length;
+      $('taskClearDone').hidden = !done.length;
+    }
+
+    function renderRemind() {
+      const list = $('remList'); list.replaceChildren();
+      if (!state.reminders.length) list.append(el('div', { class: 'empty' }, el('b', {}, '⏰'), 'یادآوری نداری؛ بالا بساز.'));
+      for (const r of state.reminders) {
+        const at = new Date(r.remind_at);
+        const row = el('div', { class: 'row tl' },
+          el('div', { class: 'when' },
+            el('b', {}, tzFmt({ hour: '2-digit', minute: '2-digit' }).format(at)),
+            el('span', {}, tzFmt({ day: 'numeric', month: 'short', weekday: 'short' }).format(at))),
+          el('div', { class: 'grow' }, r.note, r.repeat_rule !== 'none' ? el('small', {}, '🔁 تکرارشونده') : ''),
+          el('button', { class: 'x', 'aria-label': 'لغو', onclick: () => act('reminder_cancel', { id: r.id }, 'لغو شد') }, ICON.trash));
+        list.append(row);
+      }
+    }
+
+    let shareCodeShown = '';
+    function shareCode(code) {
+      shareCodeShown = code;
+      renderShop();
+      toast('کد دعوت ساخته شد؛ ۲۴ ساعت معتبره');
+    }
+    function renderShop() {
+      const s = state.shopping;
+      $('shopTitle').textContent = s.shared ? '🛒 لیست خرید مشترک 👨‍👩‍👧' : '🛒 لیست خرید';
+      const list = $('shopList'); list.replaceChildren();
+      if (!s.items.length) list.append(el('div', { class: 'empty' }, el('b', {}, '🛒'), 'خالیه؛ بالا چیزی اضافه کن.'));
+      for (const x of s.items) {
+        list.append(row2({
+          done: !!x.done, main: x.item, checkLabel: 'خریدم',
+          onCheck: () => act('shop_toggle', { id: x.id }),
+          onDel: () => act('shop_delete', { id: x.id }, 'پاک شد'),
+        }));
+      }
+      $('shopFooter').hidden = !s.items.some((x) => x.done);
+      const box = $('shareBox'); box.replaceChildren();
+      if (s.shared) {
+        box.append(el('div', { class: 'note', style: 'margin-top:0' }, `این لیست با ${s.members.join('، ') || 'خانواده‌ات'} به اشتراکه. هر تغییری برای همه دیده می‌شه.`));
+        box.append(el('button', { class: 'btn danger sm', onclick: () => act('shop_leave', {}, 'از لیست مشترک خارج شدی') }, '🚪 خروج از لیست مشترک'));
+      } else {
+        if (shareCodeShown) {
+          box.append(el('div', { class: 'code' }, el('b', {}, shareCodeShown),
+            el('button', { class: 'iconbtn', 'aria-label': 'کپی', onclick: () => { navigator.clipboard?.writeText(shareCodeShown); toast('کپی شد 📋'); } }, ICON.copy)));
+          box.append(el('div', { class: 'note' }, 'این کد رو به اعضای خانواده بده تا توی چت بنویسن «عضو لیست خرید …» یا همین‌جا وارد کنن. ۲۴ ساعت معتبره.'));
+        } else if (s.members.length) {
+          box.append(el('div', { class: 'note', style: 'margin-top:0' }, `اعضای لیست تو: ${s.members.join('، ')} — هر کدوم از چت ربات می‌تونن اضافه/خرید کنن.`));
+        }
+        box.append(el('button', { class: 'btn sm', style: 'margin-top:6px', onclick: () => act('shop_share', {}) }, ICON.share + ' ساخت کد دعوت'));
+        const join = el('div', { class: 'addrow', style: 'margin-top:10px' },
+          el('input', { class: 'field', inputmode: 'numeric', placeholder: 'کد ۶ رقمی دعوت', id: 'joinInput' }),
+          el('button', { class: 'btn sm', onclick: () => { const v = $('joinInput').value.trim(); if (/^\d{6}$/.test(fa2en(v))) act('shop_join', { code: fa2en(v) }, 'پیوستی ✅'); else toast('کد باید ۶ رقم باشه', true); } }, 'پیوستن'));
+        box.append(join);
+      }
+    }
+
+    function renderMore() {
       const b = state.briefing;
-      $('b_enabled').checked = b.enabled; $('b_voice').checked = b.voice; $('b_weekly').checked = b.weekly;
+      $('b_enabled').checked = b.enabled;
+      $('b_voice').checked = b.voice;
+      $('b_weekly').checked = b.weekly;
       $('b_hour').value = String(b.send_hour);
-      $('city').textContent = 'شهر: ' + b.city + ' (برای تغییر توی چت بگو «شهر من …»)';
+      $('cityNow').textContent = `شهر فعلی: ${b.city}` + (b.city_name && b.city_name !== b.city ? ` (${b.city_name})` : '');
+      $('tzNow').textContent = `منطقه فعلی: ${state.timezone_label} · ${state.timezone}`;
+      const mem = $('memList'); mem.replaceChildren();
+      if (!state.memories.length) mem.append(el('div', { class: 'empty' }, el('b', {}, '🧠'), 'چیزی ازت یادم نیست؛ خوبی‌ها رو بگو یادم بمونه.'));
+      for (const m of state.memories) {
+        mem.append(row2({ main: m.fact, onDel: () => act('memory_delete', { id: m.id }, 'پاک شد') }));
+      }
+      $('memFooter').hidden = !state.memories.length;
+      const wl = $('watchList'); wl.replaceChildren();
+      if (!state.watchers.length) wl.append(el('div', { class: 'empty' }, el('b', {}, '🔔'), 'هشداری فعالی نداری.'));
+      for (const w of state.watchers) {
+        wl.append(row2({ main: w.note, sub: w.kind === 'rain' ? '☔ هر روز ساعت ۷ صبح' : '💵 هر ۱۰ دقیقه چک می‌شه', onDel: () => act('watcher_cancel', { id: w.id }, 'لغو شد') }));
+      }
     }
 
+    const RENDER = { today: renderToday, money: renderMoney, tasks: renderTasks, remind: renderRemind, shop: renderShop, more: renderMore };
+    function render() {
+      if (!state) return;
+      const hour = Number(fa2en(tzFmt({ hour: 'numeric', hour12: false }).format(new Date())));
+      $('greet').textContent = hour < 5 ? 'شب بخیر حاجی 🌙' : hour < 12 ? 'صبح بخیر حاجی ☀️' : hour < 17 ? 'ظهر بخیر حاجی 🌤' : hour < 21 ? 'عصر بخیر حاجی 🌇' : 'شب بخیر حاجی 🌙';
+      $('date').textContent = tzFmt({ weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+      (RENDER[tab] || renderToday)();
+    }
+
+    /* ---------- events ---------- */
+    const onEnter = (input, fn) => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } });
+    const seg = (host, fn) => { for (const b of host.querySelectorAll('button')) b.addEventListener('click', () => { for (const x of host.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); fn(b); }); };
+
+    function quickAdd() {
+      const text = $('quickInput').value.trim();
+      if (!text) return toast('چیزی بنویس حاجی', true);
+      const { items, missing } = parseQuickExpenses(text);
+      if (!items.length) {
+        return toast(missing ? 'مبلغ رو با واحد بنویس؛ مثلاً «میوه ۹۰۰ هزار تومان»' : 'فرمت رو نفهمیدم؛ مثلاً: میوه ۹۰۰ هزار تومان', true);
+      }
+      (async () => {
+        for (const x of items) await call('expense_add', { description: x.desc, amount: x.amount });
+        state = await call('summary');
+        render();
+        toast(items.length > 1 ? `${fa(items.length)} خرج ثبت شد ✅` : 'ثبت شد ✅');
+        $('quickInput').value = '';
+      })().catch((e) => toast(e.message, true));
+    }
+    $('quickBtn').addEventListener('click', quickAdd);
+    onEnter($('quickInput'), quickAdd);
+
+    let unit = 1000;
+    seg($('expUnit'), (b) => (unit = Number(b.dataset.u)));
+    $('expAdd').addEventListener('click', () => {
+      const description = $('expDesc').value.trim();
+      const raw = fa2en($('expAmount').value).replace(/[,٬،\s]/g, '');
+      if (description.length < 2) return toast('چی خریدی رو بنویس (حداقل ۲ حرف)', true);
+      if (!/^\d{1,9}$/.test(raw)) return toast('مبلغ رو درست بنویس', true);
+      act('expense_add', { description, amount: Number(raw) * unit }, 'ثبت شد ✅').then(() => { $('expDesc').value = ''; $('expAmount').value = ''; });
+    });
+
+    const addTask = () => {
+      const text = $('taskInput').value.trim();
+      if (text.length < 2) return toast('کار رو واضح‌تر بنویس', true);
+      act('task_add', { text }, 'ثبت شد ✅').then(() => ($('taskInput').value = ''));
+    };
+    $('taskAdd').addEventListener('click', addTask);
+    onEnter($('taskInput'), addTask);
+    $('taskClearDone').addEventListener('click', () => act('task_clear', { done_only: true }, 'انجام‌شده‌ها پاک شدند'));
+    $('taskClearAll').addEventListener('click', async () => {
+      if (await confirmBox('همه‌ی کارها (حتی انجام‌نشده‌ها) پاک بشن؟')) act('task_clear', {}, 'همه پاک شدند');
+    });
+
+    const defRem = () => {
+      const d = new Date(Date.now() + 3600000);
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    $('remWhen').value = defRem();
+    const addRem = () => {
+      const note = $('remNote').value.trim();
+      const when = $('remWhen').value;
+      if (note.length < 2) return toast('یادآور رو بنویس', true);
+      if (!when) return toast('زمانش رو انتخاب کن', true);
+      const iso = new Date(when).toISOString();
+      if (isNaN(Date.parse(iso))) return toast('زمان معتبر نیست', true);
+      act('reminder_add', { note, remind_at: iso }, 'یادآور ثبت شد ⏰').then(() => { $('remNote').value = ''; $('remWhen').value = defRem(); });
+    };
+    $('remAdd').addEventListener('click', addRem);
+
+    const addShop = () => {
+      const items = $('shopInput').value.trim();
+      if (!items) return toast('چی لازم داری؟', true);
+      act('shop_add', { items }, 'اضافه شد 🛒').then(() => ($('shopInput').value = ''));
+    };
+    $('shopAdd').addEventListener('click', addShop);
+    onEnter($('shopInput'), addShop);
+    $('shopClearDone').addEventListener('click', () => act('shop_clear_done', {}, 'خریده‌شده‌ها پاک شدند'));
+
+    const bChange = (key, field) => $(field).addEventListener('change', (e) => act('briefing_update', { [key]: e.target.type === 'checkbox' ? e.target.checked : Number(e.target.value) }, 'ذخیره شد ✅'));
+    bChange('enabled', 'b_enabled'); bChange('voice', 'b_voice'); bChange('weekly', 'b_weekly'); bChange('send_hour', 'b_hour');
     for (let h = 5; h <= 11; h++) $('b_hour').append(el('option', { value: String(h) }, fa(h) + ':۰۰ صبح'));
-    $('b_enabled').addEventListener('change', (e) => act('briefing_update', { enabled: e.target.checked }, 'ذخیره شد'));
-    $('b_voice').addEventListener('change', (e) => act('briefing_update', { voice: e.target.checked }, 'ذخیره شد'));
-    $('b_weekly').addEventListener('change', (e) => act('briefing_update', { weekly: e.target.checked }, 'ذخیره شد'));
-    $('b_hour').addEventListener('change', (e) => act('briefing_update', { send_hour: Number(e.target.value) }, 'ذخیره شد'));
+    $('citySet').addEventListener('click', () => {
+      const city = $('cityInput').value.trim();
+      if (city.length < 2) return toast('اسم شهر رو بنویس', true);
+      act('city_set', { city }, 'شهر ذخیره شد 🏙').then(() => ($('cityInput').value = ''));
+    });
+    onEnter($('cityInput'), () => $('citySet').click());
+    $('tzSet').addEventListener('click', () => {
+      const timezone = $('tzInput').value.trim();
+      if (!timezone) return toast('منطقه رو بنویس؛ مثلاً Europe/Berlin', true);
+      act('timezone_set', { timezone }, 'ذخیره شد 🕰').then(() => ($('tzInput').value = ''));
+    });
 
-    function show(tab) {
-      for (const b of document.querySelectorAll('nav button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
-      for (const s of document.querySelectorAll('main section')) s.hidden = s.id !== tab || !state;
-    }
-    for (const b of document.querySelectorAll('nav button')) b.addEventListener('click', () => show(b.dataset.tab));
+    const addMem = () => {
+      const fact = $('memInput').value.trim();
+      if (fact.length < 3) return toast('کامل‌تر بگو (حداقل ۳ حرف)', true);
+      act('memory_add', { fact }, 'یادم می‌مونه 🧠').then(() => ($('memInput').value = ''));
+    };
+    $('memAdd').addEventListener('click', addMem);
+    onEnter($('memInput'), addMem);
+    $('memClear').addEventListener('click', async () => {
+      if (await confirmBox('همه‌ی حافظه‌ها پاک بشن؟')) act('memory_clear', {}, 'حافظه خالی شد');
+    });
 
-    call('summary').then((s) => { state = s; render(); show('today'); })
-      .catch((e) => { $('loading').textContent = '🙈 ' + e.message; });
+    let watchKind = 'usd_above';
+    const wkSel = $('watchKind');
+    const wkOpts = [['usd_above', 'دلار از حدی بالاتر بره'], ['usd_below', 'دلار به زیر حدی برسه'], ['gold_above', 'طلا از حدی بالاتر بره'], ['gold_below', 'طلا به زیر حدی برسه'], ['rain', 'بارون بزنه، چتر یادم بمونه ☔']];
+    for (const [k, label] of wkOpts) wkSel.append(el('option', { value: k }, label));
+    wkSel.addEventListener('change', () => {
+      watchKind = wkSel.value;
+      $('watchThreshold').disabled = watchKind === 'rain';
+      $('watchThreshold').placeholder = watchKind === 'rain' ? '—' : 'حد به تومان';
+    });
+    $('watchAdd').addEventListener('click', () => {
+      if (watchKind === 'rain') return act('watcher_add', { kind: 'rain' }, 'هشدار بارون ثبت شد ☔');
+      const raw = fa2en($('watchThreshold').value).replace(/[,٬،\s]/g, '');
+      if (!/^\d{1,10}$/.test(raw)) return toast('حد رو به تومان بنویس', true);
+      act('watcher_add', { kind: watchKind, threshold: Number(raw) }, 'هشدار ثبت شد 🔔').then(() => ($('watchThreshold').value = ''));
+    });
+
+    $('refresh').innerHTML = ICON.refresh;
+    $('refresh').addEventListener('click', () => {
+      $('refresh').classList.add('spin');
+      load().finally(() => setTimeout(() => $('refresh').classList.remove('spin'), 700));
+    });
+
+    load();
   </script>
 </body>
 </html>

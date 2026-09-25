@@ -2,6 +2,7 @@
 import { ACCESS, ADMIN, GK, RK, TOKEN, admin, db } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
 import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
+import { clearCapabilityCache } from "../../_shared/capabilities.ts";
 import { send } from "./transport.ts";
 
 export type Pref = { telegram_user_id: number; tone: string; answer_length: string; language: string; pending_tool: string; keyboard_page: string };
@@ -54,9 +55,10 @@ export async function save(id: number, patch: Partial<Pref>): Promise<Pref> {
   return row;
 }
 
-/** Runtime model config, cached for 30 s per isolate. */
+/** Runtime model config, cached for 30 s per isolate. When no provider row
+ *  exists yet (fresh install), the provider whose key is configured wins. */
 export function cfg() {
-  return readBotConfig(db);
+  return readBotConfig(db, Date.now(), { preferProvider: GK ? "gemini" : "openrouter" });
 }
 
 export async function configSet(key: string, val: string | number) {
@@ -70,6 +72,8 @@ export async function configSet(key: string, val: string | number) {
   );
   if (error) throw Error("CONFIG_WRITE");
   clearBotConfigCache();
+  // Provider/model changes immediately re-resolve model capabilities.
+  clearCapabilityCache();
 }
 
 export async function stats(id: number, chat: number) {

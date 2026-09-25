@@ -28,7 +28,8 @@ const client =
 /** Only used after ready() confirmed the client exists. */
 export const db = client as SupabaseClient,
   tg = createTg(TOKEN),
-  ready = () => !!(client && TOKEN && GK && ACCESS.adminId),
+  /** At least one provider key: the ACTIVE provider is the only one called. */
+  ready = () => !!(client && TOKEN && (GK || RK) && ACCESS.adminId),
   admin = (id: unknown) => isAdmin(ACCESS, id),
   out = (x: unknown, s = 200) =>
     Response.json(x, { status: s, headers: { "Cache-Control": "no-store" } });

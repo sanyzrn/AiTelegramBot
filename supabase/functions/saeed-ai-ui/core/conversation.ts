@@ -6,6 +6,7 @@ import { groundedSearch, searchMessage } from "./search.ts";
 import { deliver, stripRepeatedIntro } from "./output.ts";
 import type { TgMessage } from "../../_shared/telegram.ts";
 import { generate } from "../../_shared/ai.ts";
+import { failMessage } from "../../_shared/ai-errors.ts";
 import { appendUserTurn } from "../../_shared/history.ts";
 import { systemPrompt } from "../../_shared/tone.ts";
 import { loadMemories } from "../../_shared/life-memories.ts";
@@ -109,20 +110,22 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
               (x.role === "model" ? "Assistant: " : "User: ") + x.parts[0].text,
           )
           .join("\n"),
+        // The web tool follows the ACTIVE provider (Gemini grounding or the
+        // OpenRouter web plugin); it never silently calls the other service.
         r = await groundedSearch(
           (context ? "Recent dialogue:\n" + context + "\n\n" : "") +
             "Current question:\n" +
             query,
           system,
-          s.search,
+          s,
         );
       answer = r.text;
       usage = r.usage;
       usedModel = r.model;
-      usedProvider = "gemini";
+      usedProvider = r.provider;
     } else {
-      // google_search (admin-switchable) lets Gemini look up live facts; when it
-      // actually grounds the answer the verified source links are appended.
+      // google_search (admin-switchable, Gemini-only) grounds live answers;
+      // when it actually grounds the answer the source links are appended.
       const r = await generate(s, { gemini: GK, openrouter: RK }, appendUserTurn(history, [{ text: query }]), system, {
         search: s.provider === "gemini" && s.chatSearch,
       });
@@ -184,8 +187,8 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
       {
         telegram_update_id: update,
         telegram_user_id: id,
-        provider: pref.pending_tool === "web" ? "gemini" : s.provider,
-        model: pref.pending_tool === "web" ? s.search : s[s.provider],
+        provider: usedProvider,
+        model: usedModel,
         status: "failed",
         error_code: reason.slice(0, 35),
         updated_at: new Date().toISOString(),
@@ -203,7 +206,7 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
       chatId,
       pref.pending_tool === "web"
         ? searchMessage(reason)
-        : "🙈 الان یه مشکل کوچولو پیش اومد؛ دوباره امتحان کن. ❤️",
+        : failMessage(reason, { provider: s.provider, model: s[s.provider] }),
     );
   }
 }

@@ -1,4 +1,6 @@
-/** Gemini / OpenRouter request adapter shared by gateway, processor and dispatcher. */
+/** Gemini / OpenRouter request adapter shared by gateway, processor and dispatcher.
+ *  The ACTIVE provider from telegram_bot_config is the only authority: no
+ *  request is ever silently rerouted to the other provider. */
 import { extractSources, formatSources, pickSearchModel } from "./web-search.ts";
 import type { BotConfig } from "./bot-config.ts";
 import type { Fetcher } from "./telegram.ts";
@@ -14,6 +16,52 @@ export type AiResult = {
   sources: number;
 };
 
+/** Audio container mapping for OpenRouter input_audio parts. */
+function audioFormat(mime: string): string {
+  const m = String(mime || "").toLowerCase();
+  if (m.includes("ogg") || m.includes("opus")) return "ogg";
+  if (m.includes("wav")) return "wav";
+  return "mp3";
+}
+
+/** Which input modalities the outgoing content actually carries. */
+function contentModalities(contents: Content[]): Set<string> {
+  const kinds = new Set<string>();
+  for (const c of contents)
+    for (const p of c.parts) {
+      const m = p.inlineData?.mimeType || "";
+      if (!m) continue;
+      if (m.startsWith("image/")) kinds.add("image");
+      else if (m.startsWith("audio/")) kinds.add("audio");
+      else if (m === "application/pdf") kinds.add("pdf");
+    }
+  return kinds;
+}
+
+function toOpenRouterMediaPart(inline: { mimeType: string; data: string }): Record<string, unknown> {
+  const mime = inline.mimeType;
+  if (mime.startsWith("image/"))
+    return { type: "image_url", image_url: { url: `data:${mime};base64,${inline.data}` } };
+  if (mime.startsWith("audio/"))
+    return { type: "input_audio", input_audio: { data: inline.data, format: audioFormat(mime) } };
+  if (mime === "application/pdf")
+    return { type: "file", file: { filename: "document.pdf", file_data: `data:application/pdf;base64,${inline.data}` } };
+  throw Error("AI_MEDIA_" + mime);
+}
+
+/** Classify provider-side 400s into precise, graceful modality errors. */
+async function classifyBadRequest(r: Response, kinds: Set<string>): Promise<Error> {
+  let detail = "";
+  try {
+    const j = await r.json();
+    detail = String(j?.error?.message || j?.message || "");
+  } catch { /* non-JSON body */ }
+  if (/(?:audio|voice|speech|transcri)/i.test(detail) && kinds.has("audio")) return Error("AI_AUDIO_FAILED");
+  if (/(?:image|vision|multimodal|photo)/i.test(detail) && kinds.has("image")) return Error("AI_IMAGE_FAILED");
+  if (/(?:pdf|file|document)/i.test(detail) && kinds.has("pdf")) return Error("AI_PDF_FAILED");
+  return Error("AI_400");
+}
+
 /**
  * `search` enables Google Search grounding (Gemini only). When the model
  * actually grounded its answer the verified source links are appended, so
@@ -28,6 +76,7 @@ export async function generate(
 ): Promise<AiResult> {
   const fetcher = opts.fetcher || fetch;
   if (cfg.provider === "gemini") {
+    if (!keys.gemini) throw Error("AI_KEY_GEMINI");
     const useSearch = !!opts.search;
     const model = useSearch ? pickSearchModel(cfg.search || cfg.gemini) : cfg.gemini;
     const body: Record<string, unknown> = {
@@ -67,19 +116,21 @@ export async function generate(
       sources: sources.length,
     };
   }
-  if (!keys.openrouter) throw Error("AI_KEY");
+  // OpenRouter: the active chat model receives every content type it supports,
+  // converted to the standard multimodal parts. No fallback to Gemini, ever.
+  if (!keys.openrouter) throw Error("AI_KEY_OPENROUTER");
+  const kinds = contentModalities(contents);
   const messages = [
     { role: "system", content: system },
     ...contents.map((x) => {
       const txt = x.parts.filter((a) => a.text).map((a) => a.text).join("\n");
-      const med = x.parts.find((a) => a.inlineData);
+      const mediaParts = x.parts
+        .filter((a) => a.inlineData)
+        .map((a) => toOpenRouterMediaPart(a.inlineData!));
       return {
         role: x.role === "model" ? "assistant" : "user",
-        content: med
-          ? [
-            { type: "text", text: txt },
-            { type: "image_url", image_url: { url: `data:${med.inlineData!.mimeType};base64,${med.inlineData!.data}` } },
-          ]
+        content: mediaParts.length
+          ? [{ type: "text", text: txt || " " }, ...mediaParts]
           : txt,
       };
     }),
@@ -90,6 +141,8 @@ export async function generate(
     body: JSON.stringify({ model: cfg.openrouter, messages, max_tokens: Math.min(opts.maxTokens || 4096, 4096) }),
     signal: AbortSignal.timeout(opts.timeoutMs || 90000),
   });
+  if (r.status === 400) throw await classifyBadRequest(r, kinds);
+  if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 429) throw Error("AI_" + r.status);
   if (!r.ok) throw Error("AI_" + r.status);
   const j = await r.json();
   return {

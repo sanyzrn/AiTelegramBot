@@ -1,7 +1,7 @@
 import { briefingExternalSections, geocodeCity, fetchCityWeather, type CityRef } from "./briefing-sources.ts";
 import { type LifeContext, safeId, showView } from "./life-context.ts";
 import { RX, toLatinDigits } from "./life-commands.ts";
-import { deleteLastExpense, expenseCallback, parseExpense, renderExpenses, saveExpense, money } from "./life-expenses.ts";
+import { deleteLastExpense, expenseCallback, renderExpenses, recordExpenses } from "./life-expenses.ts";
 import {
   addShopping, clearDoneShopping, joinShopping, leaveShopping, listShopping, removeShopping, shareShopping, shoppingCallback,
 } from "./life-shopping.ts";
@@ -14,7 +14,7 @@ import { isValidTimeZone, timeZoneLabel, userTimeZone } from "./timezone.ts";
 import { faDigits } from "./format.ts";
 /** Private-chat life utilities. All mutations are scoped to their Telegram owner. */
 export type { LifeContext } from "./life-context.ts";
-export { parseExpense } from "./life-expenses.ts";
+export { parseExpense, parseExpenses, recordExpenses, isExpenseCommand, setPendingExpenses } from "./life-expenses.ts";
 
 /** Use exactly the same renderer for initial task lists and inline refreshes. */
 export async function renderTasks(c: LifeContext, id: number, chat: number, messageId?: number): Promise<void> {
@@ -182,13 +182,10 @@ export async function handleLifeMessage(c: LifeContext, id: number, chat: number
     await deleteLastExpense(c, id, chat);
     return true;
   }
-  const expense = parseExpense(msg);
-  if (expense === "currency_missing") { await c.send(chat, "💰 مبلغ رو با واحد مشخص کن؛ مثلاً «ناهار ۴۸۰ هزار تومان»."); return true; }
-  if (expense) {
-    const data = await saveExpense(c, id, chat, expense, update);
-    await c.send(chat, data ? `✅ ثبت شد: ${expense.description}، ${money(expense.amount)}.\nاشتباه بود؟ بنویس «حذف آخرین خرج».` : "ℹ️ این هزینه قبلاً ثبت شده بود؛ دوباره اضافه نکردم.");
-    return true;
-  }
+  // Smart batch recorder: headers («چند تا هزینه ثبت کن حاجی»), multi-line
+  // lists, spelled-out amounts («دو میلیون و هشتصد هزار تومان») and per-item
+  // delete buttons — all in one pass.
+  if (await recordExpenses(c, id, chat, msg, update)) return true;
   const add = RX.shoppingAdd.exec(msg);
   if (add) {
     await addShopping(c, id, chat, add[1]);

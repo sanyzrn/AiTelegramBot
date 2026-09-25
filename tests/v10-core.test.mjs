@@ -165,7 +165,17 @@ test('the intent classifier has one short shared deadline and fails closed', asy
   let calls = 0;
   globalThis.fetch = async () => { calls++; return new Response('{}', { status: 500 }); };
   try {
-    assert.equal(await selectToolIntent('فردا ساعت ۵ چی داریم', 'k', 'm'), 'chat');
+    assert.equal(await selectToolIntent('فردا ساعت ۵ چی داریم', { provider: 'gemini', gemini: 'm', openrouter: 'o' }, { gemini: 'k' }), 'chat');
     assert.equal(calls, 2, 'native then JSON attempt, then fail closed');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('without a key for the ACTIVE provider the classifier makes no hidden calls', async () => {
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response('{}', { status: 200 }); };
+  try {
+    assert.equal(await selectToolIntent('فردا ساعت ۵ چی داریم', { provider: 'openrouter', gemini: 'm', openrouter: 'o' }, { gemini: 'k', openrouter: '' }), 'chat', 'no OpenRouter key: deterministic intents only, no Gemini detour');
+    assert.equal(calls, 0, 'classifier must never fall back to the other provider');
   } finally { globalThis.fetch = realFetch; }
 });

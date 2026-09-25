@@ -33,7 +33,10 @@ export const db = client as SupabaseClient;
 
 export const tg = createTg(TOKEN);
 
-export const ready = () => !!(client && TOKEN && GK && ADMIN),
+/** At least one AI provider key must exist; the ACTIVE provider (from
+ *  telegram_bot_config) is the only one that is ever called. OpenRouter-only
+ *  deployments no longer require a Gemini key to boot. */
+export const ready = () => !!(client && TOKEN && (GK || RK) && ADMIN),
   admin = (id: unknown) => isAdmin(ACCESS, id),
   reply = (x: unknown, status = 200) => Response.json(x, { status, headers: { "Cache-Control": "no-store" } }),
   esc = escapeHtml,

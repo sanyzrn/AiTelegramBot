@@ -1,4 +1,6 @@
 /** Pure regexes for typed life commands; the gateway forwards anything matched here. */
+import { isExpenseCommand } from "./life-expenses.ts";
+
 export const RX = {
   briefingTest: /^(?:\/briefing_test|صبح[‌\s-]*نامه\s+(?:تست|الان))$/iu,
   briefing: /^(?:\/briefing(?:\s+(on|off))?|صبح[‌\s-]*نامه(?:\s+(روشن|خاموش|فعال|غیرفعال))?)$/iu,
@@ -38,6 +40,9 @@ export const REPLY_TRANSLATE = /^(?:ترجمه|ترجمه[‌\s]*(?:ش|اش)?\s*
 export function isLifeCommand(text: string): boolean {
   const t = String(text || "").trim();
   if (!t) return false;
+  // Smart expense lines and batch headers («چند تا هزینه ثبت کن حاجی» + list)
+  // are handled deterministically — no classifier call, no silent chat downgrade.
+  if (isExpenseCommand(t)) return true;
   return Object.values(RX).some((rx) => rx.test(t)) || SPEAK.test(t) || EXPORT_ALL.test(t);
 }
 

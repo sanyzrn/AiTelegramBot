@@ -1,9 +1,17 @@
-/** Google-Search-grounded answers shared by the gateway chat path and the
- * processor's web tool. Never invent sources; fail loudly on missing ones. */
+/**
+ * Grounded web answers shared by the gateway chat path and the processor's
+ * web tool. Provider-first: with OpenRouter active the search runs through
+ * OpenRouter's web plugin (with citation annotations); Gemini keeps Google
+ * Search grounding. Never invent sources; fail loudly on missing ones.
+ */
+import type { BotConfig } from "./bot-config.ts";
+import type { Fetcher } from "./telegram.ts";
+
 export type GroundedResult = {
   text: string;
   usage: { input?: number | null; output?: number | null };
   model: string;
+  provider: "gemini" | "openrouter";
 };
 
 type Part = { text?: string; thought?: boolean };
@@ -49,6 +57,19 @@ export function extractSources(g: GroundingMetadata | undefined): Source[] {
   ].slice(0, 5);
 }
 
+/** OpenRouter web-plugin citations (message.annotations[].url_citation). */
+type UrlCitation = { annotations?: Array<{ type?: string; url_citation?: { url?: string; title?: string } }> };
+export function extractAnnotationSources(j: unknown): Source[] {
+  const message = (j as { choices?: Array<{ message?: UrlCitation }> })?.choices?.[0]?.message;
+  const seen = new Map<string, Source>();
+  for (const a of (message?.annotations || [])) {
+    const uri = a?.url_citation?.url || "";
+    if (/^https:\/\//.test(uri) && !seen.has(uri))
+      seen.set(uri, { title: a.url_citation?.title, uri });
+  }
+  return [...seen.values()].slice(0, 5);
+}
+
 export function formatSources(sources: Source[]): string {
   return (
     "\n\n📚 منابع:\n" +
@@ -92,13 +113,64 @@ async function generateWithSearch(
   return { r, j: await r.json() };
 }
 
-export async function groundedSearch(
+async function generateWithOpenRouterWeb(
   query: string,
   system: string,
   model: string,
   key: string,
+  fetcher: Fetcher,
+): Promise<{ j: unknown; usage: { input?: number | null; output?: number | null }; text: string }> {
+  const r = await fetcher("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system + " Use real web search for current facts. Never invent sources." },
+        { role: "user", content: query },
+      ],
+      // OpenRouter's web plugin fetches real pages server-side and returns
+      // citation annotations on the message; sources stay verifiable.
+      plugins: [{ id: "web", max_results: 5 }],
+      max_tokens: 4096,
+    }),
+    signal: AbortSignal.timeout(90000),
+  });
+  if (!r.ok) {
+    console.error("SEARCH_API_STATUS", r.status, "MODEL", model);
+    throw Error("SEARCH_HTTP_" + r.status);
+  }
+  const j: { choices?: Array<{ message?: { content?: unknown } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } } = await r.json();
+  const text = typeof j.choices?.[0]?.message?.content === "string" ? j.choices[0].message.content.trim() : "";
+  return { j, usage: { input: j.usage?.prompt_tokens, output: j.usage?.completion_tokens }, text };
+}
+
+/**
+ * Grounded answer through the ACTIVE provider. With OpenRouter active this
+ * must never touch the Gemini API: the web plugin supplies the sources.
+ */
+export async function groundedSearch(
+  query: string,
+  system: string,
+  cfg: Pick<BotConfig, "provider" | "gemini" | "openrouter" | "search">,
+  keys: { gemini: string; openrouter?: string },
+  fetcher: Fetcher = fetch,
 ): Promise<GroundedResult> {
-  const primary = pickSearchModel(model);
+  if (cfg.provider === "openrouter") {
+    if (!keys.openrouter) throw Error("AI_KEY_OPENROUTER");
+    const model = String(cfg.openrouter || "").trim().replace(/:online$/, "");
+    if (!model) throw Error("SEARCH_EMPTY");
+    const { j, usage, text } = await generateWithOpenRouterWeb(query, system, model, keys.openrouter, fetcher);
+    if (!text) throw Error("SEARCH_EMPTY");
+    const sources = extractAnnotationSources(j);
+    if (!sources.length) {
+      console.error("SEARCH_NO_GROUNDING", JSON.stringify({ model, provider: "openrouter" }));
+      throw Error("SEARCH_NO_SOURCES");
+    }
+    return { text: text + formatSources(sources), usage, model, provider: "openrouter" };
+  }
+  if (!keys.gemini) throw Error("AI_KEY_GEMINI");
+  const primary = pickSearchModel(cfg.search);
   const candidates = primary === DEFAULT_SEARCH_MODEL
     ? [primary, "gemini-2.5-flash"]
     : [primary, DEFAULT_SEARCH_MODEL, "gemini-2.5-flash"];
@@ -117,7 +189,7 @@ export async function groundedSearch(
     ];
     for (const extras of attempts) {
       try {
-        const { j } = await generateWithSearch(query, system, modelName, key, extras);
+        const { j } = await generateWithSearch(query, system, modelName, keys.gemini, extras);
         const c = j.candidates?.[0],
           g = c?.groundingMetadata || j.groundingMetadata || {},
           text = (c?.content?.parts || [])
@@ -150,6 +222,7 @@ export async function groundedSearch(
             output: j.usageMetadata?.candidatesTokenCount,
           },
           model: modelName,
+          provider: "gemini",
         };
       } catch (e) {
         lastErr = e instanceof Error ? e : Error("SEARCH_EMPTY");
@@ -163,13 +236,13 @@ export async function groundedSearch(
 
 export function searchMessage(reason: string): string {
   if (/SEARCH_HTTP_429/.test(reason))
-    return "⏳ سهمیه جست‌وجوی گوگل موقتاً پر شده؛ کمی بعد دوباره امتحان کن. ❤️";
+    return "⏳ سهمیه جست‌وجوی موقتاً پر شده؛ کمی بعد دوباره امتحان کن. ❤️";
   if (/SEARCH_HTTP_403/.test(reason))
-    return "🌐 گوگل دسترسی جست‌وجوی این API را محدود کرده؛ فعلاً جست‌وجوی آنلاین در دسترس نیست. ❤️";
+    return "🌐 سرویس جست‌وجو دسترسی این API را محدود کرده؛ فعلاً جست‌وجوی آنلاین در دسترس نیست. ❤️";
   if (/SEARCH_HTTP_401/.test(reason))
     return "🌐 کلید سرویس جست‌وجو اعتبارسنجی نشد؛ تنظیمات API باید بررسی بشه. ❤️";
   if (/SEARCH_HTTP_(400|404)/.test(reason))
-    return "🌐 مدل جست‌وجو در API پذیرفته نشد؛ نام مدل و دسترسی Grounding باید بررسی بشه. ❤️";
+    return "🌐 مدل جست‌وجو در API پذیرفته نشد؛ نام مدل و دسترسی جست‌وجو باید بررسی بشه. ❤️";
   if (/SEARCH_NO_SOURCES/.test(reason))
     return "🌐 مدل پاسخ داد، اما لینک منبع معتبر برنگردوند. برای اینکه منبع ساختگی ندم، نتیجه رو منتشر نکردم. دوباره با سؤال دقیق‌تر امتحان کن. ❤️";
   if (/SEARCH_EMPTY/.test(reason))

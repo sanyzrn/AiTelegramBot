@@ -7,7 +7,9 @@ export type BotConfig = {
   openrouter: string;
   search: string;
   daily: number;
-  /** Google Search grounding for ordinary chat; admin-switchable, on by default. */
+  /** Google Search grounding for ordinary chat; admin-switchable, on by default.
+   *  Only effective while Gemini is the active provider (OpenRouter answers
+   *  live questions through the «آنلاین» tool's web plugin instead). */
   chatSearch: boolean;
 };
 
@@ -16,11 +18,23 @@ export const DEFAULT_OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free";
 const TTL_MS = 30000;
 let cache: { at: number; value: BotConfig } | null = null;
 
-export function parseBotConfig(rows: Array<{ setting_key: string; setting_value: string }>): BotConfig {
+/**
+ * An explicit `provider` row always wins. When it is missing (fresh install),
+ * the hint picks whichever provider actually has a key configured, so the bot
+ * never boots into a provider it cannot call.
+ */
+export function parseBotConfig(
+  rows: Array<{ setting_key: string; setting_value: string }>,
+  hint: { preferProvider?: "gemini" | "openrouter" } = {},
+): BotConfig {
   const x = new Map(rows.map((v) => [v.setting_key, v.setting_value]));
   const daily = Number(x.get("daily_limit") ?? 40);
+  const explicit = x.get("provider");
+  const provider = explicit === "gemini" || explicit === "openrouter"
+    ? explicit
+    : (hint.preferProvider === "gemini" ? "gemini" : "openrouter");
   return {
-    provider: x.get("provider") === "gemini" ? "gemini" : "openrouter",
+    provider,
     gemini: x.get("model") || DEFAULT_GEMINI_MODEL,
     openrouter: x.get("openrouter_model") || DEFAULT_OPENROUTER_MODEL,
     search: pickSearchModel(x.get("search_model") || x.get("model")),
@@ -31,11 +45,15 @@ export function parseBotConfig(rows: Array<{ setting_key: string; setting_value:
 
 /** A 30-second cache removes several config round trips from every request. */
 // deno-lint-ignore no-explicit-any
-export async function readBotConfig(db: any, now = Date.now()): Promise<BotConfig> {
+export async function readBotConfig(
+  db: any,
+  now = Date.now(),
+  hint: { preferProvider?: "gemini" | "openrouter" } = {},
+): Promise<BotConfig> {
   if (cache && now - cache.at < TTL_MS) return { ...cache.value };
   const { data, error } = await db.from("telegram_bot_config").select("setting_key,setting_value");
   if (error) throw Error("CONFIG");
-  const value = parseBotConfig(data || []);
+  const value = parseBotConfig(data || [], hint);
   cache = { at: now, value };
   return { ...value };
 }

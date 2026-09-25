@@ -1,14 +1,20 @@
-/** Saeed AI saeed-ai-v7 work module: quota, retry bookkeeping and AI tool execution. */
+/** Saeed AI saeed-ai-v7 work module: quota, retry bookkeeping and AI tool execution.
+ *  Provider-first: every AI call (chat, vision, OCR, STT, PDF, receipts, web)
+ *  goes through the ACTIVE provider from telegram_bot_config. No silent
+ *  rerouting to Gemini when OpenRouter is selected; incompatible media is
+ *  rejected up front with a precise, model-naming message instead. */
 import { selectToolIntent } from "../../_shared/intent-model.ts";
-import { handleLifeMessage } from "../../_shared/life.ts";
+import { handleLifeMessage, recordExpenses } from "../../_shared/life.ts";
 import { calculateExact } from "../../_shared/calculator.ts";
 import { parseTimerRequest } from "../../_shared/timer.ts";
 import { isSpokenRequest } from "../../_shared/voice-intent.ts";
-import { groundedSearch, searchMessage, pickSearchModel } from "../../_shared/web-search.ts";
+import { groundedSearch } from "../../_shared/web-search.ts";
 import { appendUserTurn, readHistory } from "../../_shared/history.ts";
 import { systemPrompt } from "../../_shared/tone.ts";
 import { loadMemories } from "../../_shared/life-memories.ts";
 import { parseJsonObject } from "../../_shared/ai.ts";
+import { failMessage as aiFailMessage, type AiErrorContext } from "../../_shared/ai-errors.ts";
+import { resolveCapabilities, modalityErrorCode, type Modality } from "../../_shared/capabilities.ts";
 import { parseReceiptJson, proposeReceipt, RECEIPT_PROMPT } from "../../_shared/receipt.ts";
 import { sendVoice, synthesize } from "../../_shared/tts.ts";
 import { GK, RK, TOKEN, TTS_MODEL, admin, db } from "./state.ts";
@@ -72,27 +78,32 @@ async function metric(update: number, id: number, s: BotConfig, status: string, 
   if (error) console.error("METRICS", error.code);
 }
 
-function failMessage(err: unknown) {
-  const s = String(err);
-  return /AI_(401|403)/.test(s)
-    ? "🔑 دسترسی به سرویس هوش مصنوعی مشکل داره؛ به مدیر خبر بده. 💛"
-    : /AI_404/.test(s)
-      ? "🤖 مدل فعلی دیگه در دسترس نیست؛ از پنل مدیریت مدل جدید انتخاب بشه. 💛"
-      : /FILE_LARGE/.test(s)
-        ? "📦 فایل زیادی بزرگه؛ لطفاً کوچیک‌تر بفرست. 😊"
-        : /IMAGE_UNSUPPORTED/.test(s)
-          ? "🖼 فعلاً نمی‌تونم تصویر رو پردازش کنم؛ یه وقت دیگه امتحان کن. 💛"
-          : /AUDIO_UNSUPPORTED/.test(s)
-            ? "🎙 این بار امکان پردازش صدا نیست؛ متنش رو بفرست. 💛"
-            : /TTS_|VOICE_SEND/.test(s)
-              ? "🔇 الان نتونستم صداش رو بسازم؛ کمی بعد دوباره «بخونش» رو بفرست. 💛"
-              : /GH_/.test(s)
-                ? "💻 الان امکان بررسی کامل این مخزن نیست؛ لینک یا حجمش رو بررسی کن. 😅"
-                : /SEARCH_/.test(s)
-                  ? searchMessage(s)
-                  : /429/.test(s)
-                    ? "⏳ الان یکم شلوغه؛ کمی بعد دوباره امتحان کن. 😅"
-                    : "🙈 این درخواست درست انجام نشد؛ دوباره امتحان کن. 💛";
+function failMessage(err: unknown, s?: BotConfig): string {
+  const ctx: AiErrorContext = s ? { provider: s.provider, model: s[s.provider] } : {};
+  return aiFailMessage(err, ctx);
+}
+
+/** Input modality required by this request, if any. */
+function requiredModality(med: Media | null, document: Doc | null, tool: string): Modality | null {
+  if (med?.type === "image") return "image";
+  if (med?.type === "audio") return "audio";
+  if (med?.type === "pdf") return "pdf";
+  if (document && tool === "receipt") return "pdf";
+  return null;
+}
+
+/**
+ * Capability gate: runs BEFORE the quota and any AI call. A request the
+ * active model definitely cannot accept is refused with a precise message
+ * (naming the model); "unknown" capabilities (router models) proceed and
+ * fail gracefully at runtime instead. Never falls back to another provider.
+ */
+async function rejectUnsupported(s: BotConfig, med: Media | null, document: Doc | null, tool: string): Promise<string | null> {
+  const need = requiredModality(med, document, tool);
+  if (!need || need === "text") return null;
+  const caps = await resolveCapabilities(s);
+  if (caps.input[need] !== false) return null;
+  return failMessage(Error(modalityErrorCode(need)), s);
 }
 
 export async function startWork(m: TgMessage, update: number, tool: string, prompt: string, override: Media | null = null) {
@@ -104,27 +115,12 @@ export async function startWork(m: TgMessage, update: number, tool: string, prom
     kind = m.voice || m.audio ? "voice" : m.photo ? "photo" : "text",
     med = override || media(m),
     document = doc(m);
-  // Gemini handles voice and PDF even while OpenRouter is the normal chat provider.
-  if (med?.type === "audio" || med?.type === "pdf" || tool === "receipt") s.provider = "gemini";
-  if (med?.type === "image" && s.provider === "openrouter") {
-    const [owner, ...rest] = s.openrouter.split("/"),
-      r = await fetch(
-        "https://openrouter.ai/api/v1/model/" +
-          encodeURIComponent(owner) +
-          "/" +
-          encodeURIComponent(rest.join("/")),
-        {
-          headers: { Authorization: "Bearer " + RK },
-          signal: AbortSignal.timeout(15000),
-        },
-      );
-    if (
-      !r.ok ||
-      !(await r.json()).data?.architecture?.input_modalities?.includes("image")
-    ) {
-      await send(chat, failMessage("IMAGE_UNSUPPORTED"));
-      return;
-    }
+  // Capability gate first: a blocked request must not consume quota or a
+  // chat-history slot, and the user must learn exactly why it was refused.
+  const blocked = await rejectUnsupported(s, med, document, tool);
+  if (blocked) {
+    await send(chat, blocked);
+    return;
   }
   const { data: row, error } = await db
     .from("telegram_chat_messages")
@@ -310,7 +306,7 @@ async function work(
     // A photo with no caption: if it is a receipt/invoice/order summary, offer to
     // record it as an expense (still confirmed by the user); otherwise analyse it.
     if (tool === "image" && med?.type === "image" && !prompt) {
-      const probe = await ai({ ...s, provider: "gemini" }, [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.", { maxTokens: 512 });
+      const probe = await ai(s, [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.", { maxTokens: 512 });
       const j = parseJsonObject(probe.text);
       if (j?.is_receipt === true) {
         const draft = parseReceiptJson(j);
@@ -324,8 +320,10 @@ async function work(
     // /voice_execute is a two-stage operation: transcribe first, then actually run
     // the selected side-effecting tool. A generative response is NOT confirmation.
     if (tool === "execute" && med?.type === "audio") {
+      // STT runs on the ACTIVE provider: Gemini reads inline audio, OpenRouter
+      // models with audio input read input_audio parts.
       const speech = await ai(
-        { ...s, provider: "gemini" },
+        s,
         [{ role: "user", parts: [
           { text: "Transcribe the Persian speech verbatim. Preserve quantities, numbers, time units and commands. Output ONLY the speech text. Never answer or execute it." },
           parts[1],
@@ -348,7 +346,7 @@ async function work(
       else if (await handleLifeMessage({ db, tg, send }, id, chat, spoken, update)) {
         // Spoken life commands («به لیست خرید اضافه کن…», «یادت باشه…») run for real.
       } else {
-        const intent = await selectToolIntent(spoken, GK, s.gemini);
+        const intent = await selectToolIntent(spoken, s, { gemini: GK, openrouter: RK });
         if (intent === "chat" && !isSpokenRequest(spoken)) {
           await send(chat, "🎙 حاجی، توی این ویس درخواست مشخصی پیدا نکردم. دوست داری تایپش کنم، خلاصه‌اش کنم یا ترجمه‌اش کنم؟ 😁", "voice", id);
           await metric(update, id, s, "success", speech.usage);
@@ -358,7 +356,15 @@ async function work(
         }
         if (intent === "remind") await setReminder(id, chat, spoken, update);
         else if (intent === "tasks") await saveTasks(id, chat, spoken, update);
-        else if (["expenses", "shopping", "briefing"].includes(intent)) {
+        else if (intent === "expenses") {
+          // Spoken expenses are saved for real: «هزینه ثبت کن خرید میوه نهصد هزار تومان».
+          // handleLifeMessage already tried the verbatim text; this permissive
+          // retry also catches items without a category word («اسنپ ۴۵ تومان»).
+          const done = await recordExpenses({ db, tg, send }, id, chat, spoken, update, { permissive: true });
+          if (!done) {
+            await send(chat, "💸 مبلغ رو واضح بگو حاجی؛ مثلاً «هزینه ثبت کن خرید میوه نهصد هزار تومان» یا «چند تا خرج: ناهار ۴۸۰ هزار، تاکسی ۵۶ هزار». چیزی ثبت نکردم.");
+          }
+        } else if (["shopping", "briefing"].includes(intent)) {
           await send(chat, "این درخواست رو نتونستم به ثبت واقعی تبدیل کنم؛ واضح‌تر بگو. چیزی ثبت نکردم.");
         } else {
           const answer = calculateExact(spoken);
@@ -373,7 +379,15 @@ async function work(
       if (performed) {
         await metric(update, id, s, "success", speech.usage);
         await completeRetry(original, id);
-        await save(id, { pending_tool: "chat", keyboard_page: "tools" });
+        // A spoken «چند تا هزینه ثبت کن» arms the pending expense-list mode;
+        // resetting the tool here would immediately disarm it again.
+        let armedExpenses = false;
+        try {
+          const { data: cur } = await db.from("telegram_bot_preferences").select("pending_tool").eq("telegram_user_id", id).maybeSingle();
+          armedExpenses = cur?.pending_tool === "expenses";
+        } catch { /* best-effort check */ }
+        if (!armedExpenses) await save(id, { pending_tool: "chat", keyboard_page: "tools" });
+        else await save(id, { keyboard_page: "tools" });
         return;
       }
     }
@@ -385,12 +399,13 @@ async function work(
     ]);
     const system = systemPrompt(p, memories);
     // The «آنلاین» tool must actually search, no matter which entrypoint
-    // classified the intent. Regular Gemini chat also gets google_search
-    // (admin-switchable) so live questions are not answered from training data.
+    // classified the intent. The search follows the ACTIVE provider: Gemini
+    // grounds with google_search, OpenRouter uses its web plugin. Regular
+    // Gemini chat can also ground live answers (admin-switchable).
     const result = tool === "web"
-      ? await groundedSearch(input, system, s.search, GK)
+      ? await groundedSearch(input, system, s, { gemini: GK, openrouter: RK })
       : await ai(s, appendUserTurn(history, parts), system, {
-          search: tool === "chat" && !med && !document && s.chatSearch,
+          search: tool === "chat" && !med && !document && s.chatSearch && s.provider === "gemini",
         });
     if (tool === "execute" && med?.type === "audio" &&
         /(?:تایمر|یادآور|ریمایندر).{0,70}(?:تنظیم شد|ثبت شد|فعال شد|ساخته شد)/iu.test(result.text || ""))
@@ -405,7 +420,7 @@ async function work(
     });
     if (error) throw Error("ANSWER_SAVE");
     answered = true;
-    await metric(update, id, s, "success", result.usage, "", tool === "web" ? result.model : "", tool === "web" ? "gemini" : "");
+    await metric(update, id, s, "success", result.usage, "", result.model, result.provider);
     await completeRetry(original, id);
     if (tool !== "chat")
       await save(id, { pending_tool: "chat", keyboard_page: "tools" });
@@ -444,14 +459,14 @@ async function work(
       .delete()
       .eq("id", row)
       .eq("telegram_user_id", id);
-    await metric(update, id, s, "failed", {}, reason, tool === "web" ? pickSearchModel(s.search) : "", tool === "web" ? "gemini" : "");
+    await metric(update, id, s, "failed", {}, reason);
     await db
       .from("saeed_ai_retry")
       .update({ status: "failed" })
       .eq("original_update_id", original)
       .eq("telegram_user_id", id);
     await show(id, chat, "retry");
-    await send(chat, failMessage(reason));
+    await send(chat, failMessage(reason, s));
   }
 }
 
@@ -502,6 +517,13 @@ export async function speak(id: number, chat: number, update: number, repliedTex
     text = data?.body || "";
   }
   if (!text.trim()) return send(chat, "🔊 چیزی برای خوندن پیدا نکردم؛ روی پیام موردنظر ریپلای کن و بنویس «بخونش».");
+  // Voice-out is a dedicated Gemini TTS engine: it stays available only while
+  // Gemini is the ACTIVE provider. With OpenRouter active there is no hidden
+  // Gemini call — the user gets a precise explanation instead.
+  const s = await cfg();
+  if (s.provider !== "gemini" || !GK) {
+    return send(chat, failMessage("TTS_PROVIDER", s));
+  }
   if (!(await charge(id, chat, update))) return;
   try {
     try {
@@ -513,6 +535,6 @@ export async function speak(id: number, chat: number, update: number, repliedTex
     const reason = e instanceof Error ? e.message : "TTS";
     console.error("SPEAK", reason);
     if (Number.isSafeInteger(update) && update > 0) await refund(update);
-    await send(chat, failMessage(reason));
+    await send(chat, failMessage(reason, s));
   }
 }

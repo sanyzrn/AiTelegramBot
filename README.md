@@ -1,6 +1,44 @@
 # Saeed AI · Telegram bot
 
-**Current application release: 10.1.1.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
+## v10.3.0 provider-first AI architecture
+
+**The Provider/Model selected in the admin settings is now the single authority for every smart feature.** When OpenRouter is active, no hidden request or forced fallback to Gemini happens anywhere — verified by 20 dedicated architecture tests (`tests/provider-first.test.mjs`).
+
+- **All forced-Gemini paths removed.** Previously voice, PDF, receipts, reminder parsing, task extraction and the intent classifier silently switched to Gemini regardless of the active provider. Now chat, vision, OCR, STT, PDF, receipts, summarization and file analysis all run on the ACTIVE provider (`_shared/ai.ts` converts media to the standard multimodal parts: `image_url`, `input_audio`, PDF `file`).
+- **Search follows the active provider.** With OpenRouter the «🌐 آنلاین» tool uses OpenRouter's web plugin and reports its citation annotations as sources (unsourced answers are still refused); Gemini keeps Google Search grounding. Chat auto-grounding remains Gemini-only and clearly labelled in the admin panel.
+- **Model capabilities are resolved and enforced.** `_shared/capabilities.ts` reads the active model's input modalities (OpenRouter model API, cached; Gemini static knowledge). Tools the active model definitely cannot serve — image, audio, PDF — are refused up front with a precise message naming the model, before the daily quota is touched. The tools page and the admin models page show a Persian capability summary per provider.
+- **Runtime graceful failure for uncertain models.** Router models (`openrouter/auto`) or unknown modalities resolve to «unknown»: the request is attempted, and a provider-side 400 is classified into precise Persian messages («مدل فعلی … از ورودی صوتی پشتیبانی نمی‌کنه») instead of a generic error.
+- **OpenRouter-only deployments boot.** `ready()` accepts either provider key; a fresh install without an explicit provider row defaults to whichever provider actually has a key configured. Missing-key failures say exactly which key is missing.
+- **Voice-out («بخونش») is explicit.** It is the dedicated Gemini TTS engine and stays available only while Gemini is the active provider; otherwise the bot explains precisely why, instead of secretly calling Gemini. The morning-briefing voice follows the same rule.
+- **Deterministic operations stay AI-independent.** Recording/reading expenses, tasks, reminders, shopping and memories never call the AI; the AI only interprets free-form input, and success is only reported after the real database write. `failMessage` (`_shared/ai-errors.ts`) now names the active model and the real reason for every failure class.
+
+## v10.2.0 smart expenses and the complete dashboard
+
+**Expense logging is now genuinely conversational** (`_shared/life-expenses.ts`):
+
+- **Several expenses in one message.** «چند تا هزینه ثبت کن حاجی» followed by one expense per line (or comma-separated, or even one spoken run-on sentence) registers every item, answers with a per-item summary, the batch total and a 🗑 delete button per row. Batch saves are idempotent against Telegram redelivery.
+- **Spelled-out amounts parse exactly.** «خرید برنج دو میلیون و هشتصد هزار تومان» → ۲٬۸۰۰٬۰۰۰ تومان. The word engine covers compound numbers («هفتصد پنجاه»), «و نیم» half-scales («دو و نیم میلیون»), decimals («۲.۸ میلیون»), «نیم میلیون», rial→toman conversion and Persian/Arabic digits anywhere.
+- **Command headers and politeness are understood.** «هزینه‌ها رو ثبت کن», «یه خرج ثبت کنم: …», «ثبت کن: …», plus filler words (حاجی، داداش، لطفاً) — while price questions («قیمت ناهار چقدره؟») still stay questions.
+- **Voice expenses are executed for real.** «با ویس بگو هزینه ثبت کن…» transcribes verbatim, then the spoken text is parsed and saved; a permissive retry also catches items without a category word. The old behaviour (intent → «نتونستم تبدیل کنم») is gone.
+- **The pending «💸 ثبت خرج» mode.** A bare header arms the mode, so the *next* message is parsed as an expense list no matter what the descriptions start with (migration `20260925120000` adds the state; the «🗂 روزمره» keyboard gained the button).
+- **Deterministic routing.** Expense lines and headers are recognized by `isLifeCommand`, so the gateway forwards them to the processor without paying for a model call.
+
+**Mini App dashboard: complete control with a minimal design** (`webapp/index.html` + `saeed-ai-webapp`):
+
+- Six tabs — امروز، خرج‌ها، کارها، یادآور، خرید، بیشتر — in a compact minimal UI (Vazirmatn, theme-aware, haptics, skeletons, toasts).
+- Everything the chat can do is now doable from the dashboard: add/edit/tick/delete/clear tasks, add reminders (with a datetime picker, validated), add/delete expenses, a smart quick-add that parses «میوه ۹۰۰ هزار تومان، برنج دو میلیون تومان» client-side, shopping add/tick/delete/clear, family share codes + join + leave, memories add/delete/clear, market/rain watchers, briefing toggles, city and timezone — 20 API actions, all Telegram-signature-scoped.
+- 14-day spending chart with tap-for-value, category bars, today-vs-yesterday comparison, grouped expense history.
+
+**Small fixes and tool polish**
+
+- Colloquial suffixed commands now route without the menu: «خلاصه‌اش کن», «ترجمه‌ش کن», «بازنویسی‌ش کن», «کارها رو اضافه کن».
+- The spoken-request detector understands «ثبت کن»/«انجام کن» phrasing, so narrated expense/registration voices are never misfiled as plain narration.
+- Two webapp bugs fixed: `show()` bypassed the header render (date/greeting stayed empty), and Persian-digit hours produced `NaN` in the greeting logic.
+
+Deploying v10.3.0: no new migration (schema unchanged from `20260925120000`); the deploy workflow checks the schema version before deploying.
+
+
+**Current application release: 10.3.0.** GitHub `main` is the source of truth. Production is Supabase project `zurfsjfulddkjiicegxh`. Edge Function names (`saeed-ai-v7`, `saeed-ai-ui`, `saeed-ai-reminders`, `saeed-ai-webapp`) are deployment identifiers, **not** the application version. The release version and the required schema version live in `supabase/functions/_shared/version.ts`; every health endpoint reports the release.
 
 ## v10.1.0 every tool works without the menu
 
@@ -80,7 +118,9 @@ The full review that motivated this release is in [`docs/PROJECT_REVIEW.md`](doc
 - `supabase/functions/saeed-ai-v7` — **processor**: tools, media (image, voice, PDF, Office), receipts, voice-out, admin panel and life commands. `core/` separates state, UI, transport, admin, media, model, voice, work and life.
 - `supabase/functions/saeed-ai-reminders` — **minute dispatcher** (pg_cron + Vault secret): reminders, briefings, alerts, weekly cards and the retention sweep. Its logic lives in `_shared/dispatch.ts`.
 - `supabase/functions/saeed-ai-webapp` — **Mini App API** for `webapp/index.html`.
-- `supabase/functions/_shared/*.ts` — everything the functions share (chat engine, Telegram transport, menus and routing, life features, parsers, time zones, briefing sources, TTS).
+- `supabase/functions/_shared/*.ts` — everything the functions share (provider-first AI adapter `ai.ts`, model capability resolver `capabilities.ts`, precise error messages `ai-errors.ts`, chat engine, Telegram transport, menus and routing, life features, parsers, time zones, briefing sources, TTS).
+
+**Provider-first rule (v10.3.0):** the provider/model pair in `telegram_bot_config` is the only authority for AI features. Direct calls to `generativelanguage.googleapis.com` exist only inside the provider transports (`_shared/ai.ts`, `_shared/web-search.ts`, `_shared/tts.ts`, `_shared/morning-voice.ts`, `_shared/intent-model.ts`) and the admin's explicit endpoint test (`core/admin.ts`); `tests/provider-first.test.mjs` fails the build if any other file starts talking to Gemini directly or forces the provider back.
 
 No file contains `@ts-nocheck`, `@ts-ignore` or `@ts-expect-error`, and every function's `deno.json` enables `strict`. **Edit the TypeScript modules directly**; do not add feature changes through string-replacement scripts. Preserve webhook and cron authentication and do not commit credentials or user data.
 
@@ -97,7 +137,7 @@ Migrations are still applied manually (for example with the Supabase CLI or dash
 ## Core functionality (since v9)
 
 - **Natural-language routing:** common requests for timers, reminders, tasks, expenses, shopping and calculations can work without opening a menu; other tools remain available. This does not promise arbitrary future tools execute automatically.
-- **Voice:** automatically acts on identifiable requests. Replies to the original audio such as «تایپش کن»، «خلاصه‌ش کن» or «ترجمه‌ش کن» are accepted within the 15-minute retention period; a voice with no identifiable instruction shows options. Gemini is used for audio even if text chat is configured for OpenRouter.
+- **Voice:** automatically acts on identifiable requests. Replies to the original audio such as «تایپش کن»، «خلاصه‌ش کن» or «ترجمه‌ش کن» are accepted within the 15-minute retention period; a voice with no identifiable instruction shows options. Speech-to-text runs on the active provider (a model with audio input is required for voice under OpenRouter).
 - **Tasks:** new items append rather than replace; per-user completion/deletion via inline buttons.
 - **Reminders:** daily, weekly, monthly and every-N-hours recurrence, independent minute-based delivery, complete/snooze/cancel buttons. Telegram timer delivery is not a second-accurate phone alarm and can lag around a minute.
 - **Shopping:** deduplicated additions; inline buttons refresh the original message, with a new-list fallback when editing fails. The webhook promptly acknowledges callbacks.

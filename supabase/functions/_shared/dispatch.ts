@@ -194,7 +194,9 @@ export async function dispatchBriefings(deps: DispatchDeps, cache: Cache = tickC
       } catch (e) {
         console.error("BRIEF_RIDDLE", uid, e instanceof Error ? e.message.slice(0, 60) : "UNKNOWN");
       }
-      if (p.voice && deps.speak) {
+      // Voice-out is the dedicated Gemini TTS engine: with OpenRouter active
+      // there is no hidden Gemini call — the briefing stays text-only.
+      if (p.voice && deps.speak && voiceCfg.prefer !== "openrouter") {
         try {
           await deps.speak(chat, intro + " " + signoff);
         } catch (e) {

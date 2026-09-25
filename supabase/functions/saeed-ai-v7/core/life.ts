@@ -1,7 +1,10 @@
-/** Reminders, timers, task persistence and profile for Saeed AI. */
+/** Reminders, timers, task persistence and profile for Saeed AI.
+ *  Reminder/task PARSING runs on the active provider; the database write and
+ *  the user-facing confirmation only happen after the actual DB write. */
 import { handleLifeMessage, renderTasks } from "../../_shared/life.ts";
 import { durationLabel, type TimerRequest } from "../../_shared/timer.ts";
 import { parseJsonObject } from "../../_shared/ai.ts";
+import { failMessage } from "../../_shared/ai-errors.ts";
 import { formatLocal, localParts, offsetLabel, timeZoneLabel, userTimeZone } from "../../_shared/timezone.ts";
 import { loadMemories } from "../../_shared/life-memories.ts";
 import { faDigits } from "../../_shared/format.ts";
@@ -34,32 +37,39 @@ export async function scheduleRealTimer(id: number, chat: number, timer: TimerRe
 }
 
 export async function setReminder(id: number, chat: number, input: string, update: number | null = null) {
-  // Reminder parsing uses Gemini regardless of the conversational provider.
-  const s = { ...(await cfg()), provider: "gemini" as const };
+  // Parsing uses the ACTIVE provider (provider-first); the write below is the
+  // only source of truth for what actually got saved.
+  const s = await cfg();
   const tz = await userTimeZone(db, id);
   const now = new Date();
   const local = now.toLocaleString("en-US", {
     timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   });
   const offset = offsetLabel(tz, now);
-  const r = await ai(
-    s,
-    [
-      {
-        role: "user",
-        parts: [
-          {
-            text:
-              `Current local time (${tz}, UTC${offset}): ${local}. ` +
-              'Parse this Persian reminder request into minified JSON {"note":string,"remind_at":string|null,"repeat_rule":"none|daily|weekly|monthly|hours","repeat_every_hours":number|null}. Return repeat_rule none unless the user explicitly asks to repeat. If repeating every N hours use rule hours and N=1..168; for every day, week or month use daily, weekly or monthly. ' +
-              `Convert relative times to ISO8601 with the ${offset} offset. A recurring reminder still needs an unambiguous FIRST occurrence; if unknown use null. Request: ` +
-              input,
-          },
-        ],
-      },
-    ],
-    "Output only minified JSON, no prose, no markdown.",
-  );
+  let r;
+  try {
+    r = await ai(
+      s,
+      [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                `Current local time (${tz}, UTC${offset}): ${local}. ` +
+                'Parse this Persian reminder request into minified JSON {"note":string,"remind_at":string|null,"repeat_rule":"none|daily|weekly|monthly|hours","repeat_every_hours":number|null}. Return repeat_rule none unless the user explicitly asks to repeat. If repeating every N hours use rule hours and N=1..168; for every day, week or month use daily, weekly or monthly. ' +
+                `Convert relative times to ISO8601 with the ${offset} offset. A recurring reminder still needs an unambiguous FIRST occurrence; if unknown use null. Request: ` +
+                input,
+            },
+          ],
+        },
+      ],
+      "Output only minified JSON, no prose, no markdown.",
+    );
+  } catch (e) {
+    await send(chat, failMessage(e, { provider: s.provider, model: s[s.provider] }));
+    return;
+  }
   const j = parseJsonObject<{ note?: string; remind_at?: string; repeat_rule?: string; repeat_every_hours?: number }>(r.text);
   const when = j?.remind_at ? new Date(j.remind_at) : null;
   if (!j?.note || !when || isNaN(+when) || +when <= Date.now()) {
@@ -114,23 +124,31 @@ export async function setReminder(id: number, chat: number, input: string, updat
 }
 
 export async function saveTasks(id: number, chat: number, input: string, update: number | null = null) {
-  const s = { ...(await cfg()), provider: "gemini" as const };
-  const r = await ai(
-    s,
-    [
-      {
-        role: "user",
-        parts: [
-          {
-            text:
-              'Extract concise NEW tasks to APPEND (never replace existing tasks) from this Persian text into strict minified JSON {"tasks":[string]}. Max 10 short imperative Persian items, no invented deadlines. Text: ' +
-              input,
-          },
-        ],
-      },
-    ],
-    "Output only minified JSON, no prose, no markdown.",
-  );
+  // Extraction runs on the ACTIVE provider; tasks are only appended after a
+  // successful database write, and the rendered list is the confirmation.
+  const s = await cfg();
+  let r;
+  try {
+    r = await ai(
+      s,
+      [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                'Extract concise NEW tasks to APPEND (never replace existing tasks) from this Persian text into strict minified JSON {"tasks":[string]}. Max 10 short imperative Persian items, no invented deadlines. Text: ' +
+                input,
+            },
+          ],
+        },
+      ],
+      "Output only minified JSON, no prose, no markdown.",
+    );
+  } catch (e) {
+    await send(chat, failMessage(e, { provider: s.provider, model: s[s.provider] }));
+    return;
+  }
   const j = parseJsonObject<{ tasks?: unknown[] }>(r.text);
   const tasks = (Array.isArray(j?.tasks) ? j.tasks : [])
     .map((x) => String(x).trim().slice(0, 200))

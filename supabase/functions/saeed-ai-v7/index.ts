@@ -1,13 +1,13 @@
 /** Saeed AI saeed-ai-v7 index module: authenticated processor entrypoint and routing. */
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
-import { handleLifeMessage, handleLifeCallback } from "../_shared/life.ts";
+import { handleLifeMessage, handleLifeCallback, recordExpenses, setPendingExpenses } from "../_shared/life.ts";
 import { EXPORT_ALL, REPLY_TRANSLATE, SPEAK } from "../_shared/life-commands.ts";
 import { ASKS_FOR_RECEIPT, mediaTool } from "../_shared/media-intent.ts";
 import { calculateExact } from "../_shared/calculator.ts";
 import { parseTimerRequest, normalizeTimerDigits } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
-import { GK, WEBAPP_URL, admin, db, ready, reply } from "./core/state.ts";
+import { GK, RK, WEBAPP_URL, admin, db, ready, reply } from "./core/state.ts";
 import { adminInput, allowed, cfg, exportAll, exportMd, pref, save, stats } from "./core/admin.ts";
 import { charge, retry, speak, startWork } from "./core/work.ts";
 import { chooseVoice, handleVoiceReply, voiceAction } from "./core/voice.ts";
@@ -180,6 +180,13 @@ async function message(original: TgMessage, update: number) {
     if (!(await charge(id, chat, update))) return;
     return saveTasks(id, chat, text, update);
   }
+  // «💸 ثبت خرج» pending mode: every line is an expense, no category word needed.
+  // Reports and other life commands still work (handleLifeMessage runs first).
+  if (p.pending_tool === "expenses" && text) {
+    if (await handleLifeMessage(life(m.from), id, chat, text, update)) return;
+    if (await recordExpenses(life(m.from), id, chat, text, update, { permissive: true })) return;
+    return send(chat, "💸 هر خط یکی بنویس حاجی؛ مثلاً «میوه ۹۰۰ هزار تومان» یا «قبض دو میلیون تومان». با /cancel منصرف شو.");
+  }
   if (await adminInput(id, chat, text)) return;
   const directTimer = parseTimerRequest(text);
   if (directTimer) return scheduleRealTimer(id, chat, directTimer, update);
@@ -200,7 +207,7 @@ async function message(original: TgMessage, update: number) {
   const inferred: string = (p.pending_tool === "chat" || ["documents", "image", "ocr", "receipt"].includes(p.pending_tool)) && requestText
     ? m.saeed_auto_tool && safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
-      : await selectToolIntent(requestText, GK, (await cfg()).gemini)
+      : await selectToolIntent(requestText, await cfg(), { gemini: GK, openrouter: RK })
     : "chat";
   if (inferred === "remind") {
     const timer = parseTimerRequest(requestText);
@@ -222,7 +229,12 @@ async function message(original: TgMessage, update: number) {
     return startWork(m, update, inferred, requestText, null);
   if (["expenses", "shopping", "briefing"].includes(inferred)) {
     if (await handleLifeMessage(life(m.from), id, chat, requestText, update)) return;
-    return send(chat, inferred === "expenses" ? "برای ثبت هزینه بنویس: ناهار ۴۸۰ هزار تومان؛ یا عکس رسیدش رو بفرست. گزارش: خرج‌هام." : inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
+    if (inferred === "expenses") {
+      // A fuzzy expense intent: arm the pending mode, the next message is the list.
+      await setPendingExpenses(life(m.from), id, true);
+      return send(chat, "💸 بفرست حاجی؛ هر خط یکی — مثلاً «خرید میوه ۹۰۰ هزار تومان». چند خطی هم می‌تونه باشه؛ همه رو با هم ثبت می‌کنم. با /cancel منصرف شو.");
+    }
+    return send(chat, inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
   }
   if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
   if (inferred === "repo") {
