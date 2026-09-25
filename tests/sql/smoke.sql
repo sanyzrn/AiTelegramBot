@@ -58,7 +58,7 @@ END $$;
 INSERT INTO public.saeed_ai_reminders (telegram_user_id, telegram_chat_id, note, remind_at, repeat_rule) VALUES (42, 42, 'test', now() - interval '1 minute', 'daily');
 DO $$ DECLARE n int; BEGIN SELECT count(*) INTO n FROM public.saeed_ai_claim_due_reminders(10); ASSERT n = 1, 'reminder claim'; END $$;
 
-DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20260922120000', 'schema version'; END $$;
+DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20260925120000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 ROLLBACK;
 \echo SMOKE_OK
