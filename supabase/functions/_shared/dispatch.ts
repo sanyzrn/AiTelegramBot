@@ -108,7 +108,7 @@ export async function dispatchReminders(deps: DispatchDeps, cache: Cache = tickC
 }
 
 /** The morning voice follows the same provider/model settings as the chat AI. */
-export async function morningVoiceConfig(deps: DispatchDeps): Promise<VoiceConfig> {
+export async function morningVoiceConfig(deps: Pick<DispatchDeps, "db" | "keys">): Promise<VoiceConfig> {
   try {
     const { data, error } = await deps.db.from("telegram_bot_config").select("setting_key,setting_value");
     if (error || !data) return {};
