@@ -354,6 +354,12 @@
     const tg = window.Telegram?.WebApp;
     tg?.ready(); tg?.expand();
 
+    const telegramName = (() => {
+      const u = tg?.initDataUnsafe?.user;
+      const first = String(u?.first_name || '').trim();
+      return first || 'دوست من';
+    })();
+
     const syncNativeColorScheme = () => {
       const scheme = tg?.colorScheme === 'light' ? 'light' : 'dark';
       document.documentElement.style.colorScheme = scheme;
@@ -806,7 +812,9 @@
     function render() {
       if (!state) return;
       const hour = Number(fa2en(tzFmt({ hour: 'numeric', hour12: false }).format(new Date())));
-      $('greet').textContent = hour < 5 ? 'شب بخیر حاجی 🌙' : hour < 12 ? 'صبح بخیر حاجی ☀️' : hour < 17 ? 'ظهر بخیر حاجی 🌤' : hour < 21 ? 'عصر بخیر حاجی 🌇' : 'شب بخیر حاجی 🌙';
+      const greeting = hour < 5 ? 'شب بخیر' : hour < 12 ? 'صبح بخیر' : hour < 17 ? 'ظهر بخیر' : hour < 21 ? 'عصر بخیر' : 'شب بخیر';
+      const emoji = hour < 5 ? '🌙' : hour < 12 ? '☀️' : hour < 17 ? '🌤' : hour < 21 ? '🌇' : '🌙';
+      $('greet').textContent = `${greeting} ${telegramName} ${emoji}`;
       $('date').textContent = tzFmt({ weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
       (RENDER[tab] || renderToday)();
     }
