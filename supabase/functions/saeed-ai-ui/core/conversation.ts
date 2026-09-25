@@ -67,7 +67,9 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
   if (error?.code === "23505") return;
   if (error || !row?.id) throw Error("INSERT");
   let reserved = false,
-    answered = false;
+    answered = false,
+    usedModel = s[s.provider],
+    usedProvider = s.provider;
   try {
     const { data: q, error: qe } = await db.rpc("saeed_ai_reserve_daily", {
       p_user_id: id,
@@ -99,9 +101,7 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
       // Same system prompt as the processor; explicit memories are included.
       system = systemPrompt(pref, memories);
     let answer = "",
-      usage = {} as { input?: number | null; output?: number | null },
-      usedModel = s[s.provider],
-      usedProvider = s.provider;
+      usage = {} as { input?: number | null; output?: number | null };
     if (pref.pending_tool === "web") {
       const context = history
           .slice(-4)
