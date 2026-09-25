@@ -173,6 +173,8 @@
     label.switch:first-of-type { border-top: 0; }
     label.switch .desc { color: var(--hint); font-size: 11.5px; display: block; }
     input[type=checkbox] { accent-color: var(--accent); width: 20px; height: 20px; flex: none; }
+    #remWhen { color-scheme: inherit; }
+    #remWhen::-webkit-calendar-picker-indicator { opacity: .72; cursor: pointer; }
     select.field { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--hint) 50%), linear-gradient(135deg, var(--hint) 50%, transparent 50%); background-position: calc(18px) calc(1em + 2px), calc(23px) calc(1em + 2px); background-size: 5px 5px; background-repeat: no-repeat; padding-inline-end: 36px; }
     .inline-form { display: flex; flex-direction: column; gap: 8px; }
   </style>
@@ -351,6 +353,16 @@
     'use strict';
     const tg = window.Telegram?.WebApp;
     tg?.ready(); tg?.expand();
+
+    const syncNativeColorScheme = () => {
+      const scheme = tg?.colorScheme === 'light' ? 'light' : 'dark';
+      document.documentElement.style.colorScheme = scheme;
+      document.body.style.colorScheme = scheme;
+      const picker = document.getElementById('remWhen');
+      if (picker) picker.style.colorScheme = scheme;
+    };
+    syncNativeColorScheme();
+    tg?.onEvent?.('themeChanged', syncNativeColorScheme);
     tg?.setHeaderColor?.('bg_color'); tg?.setBackgroundColor?.('bg_color');
 
     const params = new URLSearchParams(location.search);
