@@ -366,6 +366,11 @@
       for (const kid of kids) node.append(kid);
       return node;
     };
+    const iconNode = (markup) => {
+      const t = document.createElement('template');
+      t.innerHTML = String(markup).trim();
+      return t.content.firstElementChild;
+    };
     let state = null;
     let busy = false;
 
@@ -550,7 +555,7 @@
       if (state && sec) { sec.classList.add('fade'); render(); }
     }
     for (const [id, label, icon] of TABS) {
-      $('tabs').append(el('button', { role: 'tab', 'data-tab': id, 'aria-selected': String(id === 'today'), onclick: () => show(id) }, icon, label));
+      $('tabs').append(el('button', { role: 'tab', 'data-tab': id, 'aria-selected': String(id === 'today'), onclick: () => show(id) }, iconNode(icon), label));
     }
 
     /* ---------- confirm (native when available) ---------- */
@@ -600,8 +605,8 @@
       if (onCheck) row.append(el('button', { class: 'check', 'aria-label': checkLabel || 'انجام شد', onclick: onCheck }, done ? '✓' : ''));
       const grow = el('div', { class: 'grow' }, main, sub ? el('small', {}, sub) : '');
       row.append(grow);
-      if (onEdit) row.append(el('button', { class: 'edit', 'aria-label': 'ویرایش', onclick: onEdit }, ICON.pencil));
-      if (onDel) row.append(el('button', { class: 'x', 'aria-label': delLabel, onclick: onDel }, ICON.trash));
+      if (onEdit) row.append(el('button', { class: 'edit', 'aria-label': 'ویرایش', onclick: onEdit }, iconNode(ICON.pencil)));
+      if (onDel) row.append(el('button', { class: 'x', 'aria-label': delLabel, onclick: onDel }, iconNode(ICON.trash)));
       return row;
     }
 
@@ -720,7 +725,7 @@
             el('b', {}, tzFmt({ hour: '2-digit', minute: '2-digit' }).format(at)),
             el('span', {}, tzFmt({ day: 'numeric', month: 'short', weekday: 'short' }).format(at))),
           el('div', { class: 'grow' }, r.note, r.repeat_rule !== 'none' ? el('small', {}, '🔁 تکرارشونده') : ''),
-          el('button', { class: 'x', 'aria-label': 'لغو', onclick: () => act('reminder_cancel', { id: r.id }, 'لغو شد') }, ICON.trash));
+          el('button', { class: 'x', 'aria-label': 'لغو', onclick: () => act('reminder_cancel', { id: r.id }, 'لغو شد') }, iconNode(ICON.trash)));
         list.append(row);
       }
     }
@@ -751,12 +756,12 @@
       } else {
         if (shareCodeShown) {
           box.append(el('div', { class: 'code' }, el('b', {}, shareCodeShown),
-            el('button', { class: 'iconbtn', 'aria-label': 'کپی', onclick: () => { navigator.clipboard?.writeText(shareCodeShown); toast('کپی شد 📋'); } }, ICON.copy)));
+            el('button', { class: 'iconbtn', 'aria-label': 'کپی', onclick: () => { navigator.clipboard?.writeText(shareCodeShown); toast('کپی شد 📋'); } }, iconNode(ICON.copy))));
           box.append(el('div', { class: 'note' }, 'این کد رو به اعضای خانواده بده تا توی چت بنویسن «عضو لیست خرید …» یا همین‌جا وارد کنن. ۲۴ ساعت معتبره.'));
         } else if (s.members.length) {
           box.append(el('div', { class: 'note', style: 'margin-top:0' }, `اعضای لیست تو: ${s.members.join('، ')} — هر کدوم از چت ربات می‌تونن اضافه/خرید کنن.`));
         }
-        box.append(el('button', { class: 'btn sm', style: 'margin-top:6px', onclick: () => act('shop_share', {}) }, ICON.share + ' ساخت کد دعوت'));
+        box.append(el('button', { class: 'btn sm', style: 'margin-top:6px', onclick: () => act('shop_share', {}) }, iconNode(ICON.share), ' ساخت کد دعوت'));
         const join = el('div', { class: 'addrow', style: 'margin-top:10px' },
           el('input', { class: 'field', inputmode: 'numeric', placeholder: 'کد ۶ رقمی دعوت', id: 'joinInput' }),
           el('button', { class: 'btn sm', onclick: () => { const v = $('joinInput').value.trim(); if (/^\d{6}$/.test(fa2en(v))) act('shop_join', { code: fa2en(v) }, 'پیوستی ✅'); else toast('کد باید ۶ رقم باشه', true); } }, 'پیوستن'));
