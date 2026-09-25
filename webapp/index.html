@@ -173,8 +173,53 @@
     label.switch:first-of-type { border-top: 0; }
     label.switch .desc { color: var(--hint); font-size: 11.5px; display: block; }
     input[type=checkbox] { accent-color: var(--accent); width: 20px; height: 20px; flex: none; }
-    #remWhen { color-scheme: inherit; }
-    #remWhen::-webkit-calendar-picker-indicator { opacity: .72; cursor: pointer; }
+    .picker-field {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      min-height: 46px; text-align: right; cursor: pointer;
+    }
+    .picker-field .pick-icon { color: var(--accent); font-size: 18px; }
+    .picker-modal {
+      position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.56);
+      display: flex; align-items: flex-end; justify-content: center; padding: 12px;
+      backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    }
+    .picker-modal[hidden] { display: none; }
+    .picker-sheet {
+      width: min(520px, 100%); max-height: 88vh; overflow: auto;
+      background: var(--card); color: var(--text); border: 1px solid var(--line);
+      border-radius: 24px; padding: 16px; box-shadow: 0 18px 50px rgba(0,0,0,.28);
+    }
+    .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .picker-head strong { font-size: 17px; }
+    .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 10px; }
+    .month-nav .month-title { font-weight: 700; text-align: center; flex: 1; }
+    .nav-mini {
+      width: 36px; height: 36px; border-radius: 11px; border: 1px solid var(--line);
+      background: var(--bg2); color: var(--text); display: grid; place-items: center;
+    }
+    .nav-mini:disabled { opacity: .3; }
+    .weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+    .weekdays span { color: var(--hint); text-align: center; font-size: 11px; padding: 2px 0 4px; }
+    .day-btn {
+      aspect-ratio: 1; min-width: 0; border: 0; border-radius: 12px;
+      background: transparent; color: var(--text); font: inherit; font-weight: 600;
+    }
+    .day-btn:hover, .day-btn:active { background: var(--accent-soft); }
+    .day-btn.selected { background: var(--accent); color: var(--accent-text); }
+    .day-btn:disabled { opacity: .22; }
+    .day-blank { aspect-ratio: 1; }
+    .time-row {
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+      margin: 16px 0 4px;
+    }
+    .time-row input {
+      width: 100%; text-align: center; direction: ltr; font-size: 20px; font-weight: 800;
+      background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 10px;
+      color: var(--text); outline: none;
+    }
+    .time-row input:focus { border-color: var(--accent); }
+    .time-row b { font-size: 22px; }
+    .picker-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
     select.field { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--hint) 50%), linear-gradient(135deg, var(--hint) 50%, transparent 50%); background-position: calc(18px) calc(1em + 2px), calc(23px) calc(1em + 2px); background-size: 5px 5px; background-repeat: no-repeat; padding-inline-end: 36px; }
     .inline-form { display: flex; flex-direction: column; gap: 8px; }
   </style>
@@ -271,7 +316,13 @@
         <div class="inline-form">
           <input class="field" id="remNote" placeholder="چی یادت بمونه؟ مثلاً: جلسه با تیم">
           <div class="grid2">
-            <input class="field" id="remWhen" type="datetime-local">
+            <div>
+              <input id="remWhen" type="hidden">
+              <button class="field picker-field" id="remWhenBtn" type="button">
+                <span id="remWhenText">انتخاب تاریخ و ساعت</span>
+                <span class="pick-icon">🗓</span>
+              </button>
+            </div>
             <button class="btn primary" id="remAdd">ثبت یادآور</button>
           </div>
           <div class="note">ساعت به وقت دستگاه خودته؛ حداکثر ۳۰ روز جلوتر.</div>
@@ -348,6 +399,34 @@
     </section>
   </main>
 
+  <div class="picker-modal" id="remPicker" hidden role="dialog" aria-modal="true" aria-labelledby="remPickerTitle">
+    <div class="picker-sheet">
+      <div class="picker-head">
+        <strong id="remPickerTitle">تاریخ و ساعت یادآور</strong>
+        <button class="iconbtn" id="remPickerClose" type="button" aria-label="بستن">✕</button>
+      </div>
+      <div class="month-nav">
+        <button class="nav-mini" id="remMonthPrev" type="button" aria-label="ماه قبل">›</button>
+        <div class="month-title" id="remMonthTitle"></div>
+        <button class="nav-mini" id="remMonthNext" type="button" aria-label="ماه بعد">‹</button>
+      </div>
+      <div class="weekdays" aria-hidden="true">
+        <span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span>
+      </div>
+      <div class="calendar-grid" id="remCalendar"></div>
+      <div class="time-row">
+        <input id="remHour" inputmode="numeric" type="number" min="0" max="23" aria-label="ساعت">
+        <b>:</b>
+        <input id="remMinute" inputmode="numeric" type="number" min="0" max="59" aria-label="دقیقه">
+      </div>
+      <div class="note">زمان بر اساس ساعت دستگاه شما ثبت می‌شود.</div>
+      <div class="picker-actions">
+        <button class="btn ghost" id="remPickerCancel" type="button">انصراف</button>
+        <button class="btn primary" id="remPickerSet" type="button">تأیید</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" role="status" aria-live="polite"></div>
   <script>
     'use strict';
@@ -364,8 +443,6 @@
       const scheme = tg?.colorScheme === 'light' ? 'light' : 'dark';
       document.documentElement.style.colorScheme = scheme;
       document.body.style.colorScheme = scheme;
-      const picker = document.getElementById('remWhen');
-      if (picker) picker.style.colorScheme = scheme;
     };
     syncNativeColorScheme();
     tg?.onEvent?.('themeChanged', syncNativeColorScheme);
@@ -863,20 +940,88 @@
       if (await confirmBox('همه‌ی کارها (حتی انجام‌نشده‌ها) پاک بشن؟')) act('task_clear', {}, 'همه پاک شدند');
     });
 
+    const pad2 = (n) => String(n).padStart(2, '0');
     const defRem = () => {
       const d = new Date(Date.now() + 3600000);
-      const p = (n) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     };
-    $('remWhen').value = defRem();
+    const remLabel = (value) => {
+      const d = new Date(value);
+      return isNaN(+d) ? 'انتخاب تاریخ و ساعت' : new Intl.DateTimeFormat('fa-IR', {
+        weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+      }).format(d);
+    };
+    const setRemWhen = (value) => {
+      $('remWhen').value = value;
+      $('remWhenText').textContent = remLabel(value);
+    };
+    setRemWhen(defRem());
+
+    let remSelected = new Date($('remWhen').value);
+    let remViewMonth = new Date(remSelected.getFullYear(), remSelected.getMonth(), 1);
+    const remStart = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+    const remEnd = () => { const d = remStart(); d.setDate(d.getDate() + 30); d.setHours(23,59,59,999); return d; };
+    const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
+
+    function renderRemPicker() {
+      $('remMonthTitle').textContent = new Intl.DateTimeFormat('fa-IR', { month: 'long', year: 'numeric' }).format(remViewMonth);
+      const cal = $('remCalendar'); cal.replaceChildren();
+      const y = remViewMonth.getFullYear(), m = remViewMonth.getMonth();
+      const first = new Date(y, m, 1);
+      const offset = (first.getDay() + 1) % 7;
+      for (let i = 0; i < offset; i++) cal.append(el('span', { class: 'day-blank' }));
+      const count = new Date(y, m + 1, 0).getDate();
+      const min = remStart(), max = remEnd();
+      for (let day = 1; day <= count; day++) {
+        const d = new Date(y, m, day);
+        const disabled = d < min || d > max;
+        const b = el('button', { class: 'day-btn' + (sameDay(d, remSelected) ? ' selected' : ''), type: 'button' }, Number(day).toLocaleString('fa-IR'));
+        b.disabled = disabled;
+        if (!disabled) b.addEventListener('click', () => { remSelected = d; renderRemPicker(); });
+        cal.append(b);
+      }
+      $('remMonthPrev').disabled = monthKey(new Date(y, m - 1, 1)) < monthKey(min);
+      $('remMonthNext').disabled = monthKey(new Date(y, m + 1, 1)) > monthKey(max);
+    }
+
+    function openRemPicker() {
+      const current = new Date($('remWhen').value || defRem());
+      remSelected = isNaN(+current) ? new Date(Date.now() + 3600000) : current;
+      remViewMonth = new Date(remSelected.getFullYear(), remSelected.getMonth(), 1);
+      $('remHour').value = String(remSelected.getHours());
+      $('remMinute').value = pad2(remSelected.getMinutes());
+      renderRemPicker();
+      $('remPicker').hidden = false;
+    }
+    const closeRemPicker = () => { $('remPicker').hidden = true; };
+    $('remWhenBtn').addEventListener('click', openRemPicker);
+    $('remPickerClose').addEventListener('click', closeRemPicker);
+    $('remPickerCancel').addEventListener('click', closeRemPicker);
+    $('remPicker').addEventListener('click', (e) => { if (e.target === $('remPicker')) closeRemPicker(); });
+    $('remMonthPrev').addEventListener('click', () => { remViewMonth = new Date(remViewMonth.getFullYear(), remViewMonth.getMonth() - 1, 1); renderRemPicker(); });
+    $('remMonthNext').addEventListener('click', () => { remViewMonth = new Date(remViewMonth.getFullYear(), remViewMonth.getMonth() + 1, 1); renderRemPicker(); });
+    $('remPickerSet').addEventListener('click', () => {
+      const h = Number($('remHour').value), min = Number($('remMinute').value);
+      if (!Number.isInteger(h) || h < 0 || h > 23 || !Number.isInteger(min) || min < 0 || min > 59) return toast('ساعت معتبر نیست', true);
+      const chosen = new Date(remSelected.getFullYear(), remSelected.getMonth(), remSelected.getDate(), h, min, 0, 0);
+      if (chosen <= new Date()) return toast('زمان باید در آینده باشه', true);
+      if (chosen > remEnd()) return toast('حداکثر ۳۰ روز جلوتر', true);
+      const value = `${chosen.getFullYear()}-${pad2(chosen.getMonth() + 1)}-${pad2(chosen.getDate())}T${pad2(chosen.getHours())}:${pad2(chosen.getMinutes())}`;
+      setRemWhen(value);
+      closeRemPicker();
+      tg?.HapticFeedback?.selectionChanged?.();
+    });
+
     const addRem = () => {
       const note = $('remNote').value.trim();
       const when = $('remWhen').value;
       if (note.length < 2) return toast('یادآور رو بنویس', true);
       if (!when) return toast('زمانش رو انتخاب کن', true);
-      const iso = new Date(when).toISOString();
-      if (isNaN(Date.parse(iso))) return toast('زمان معتبر نیست', true);
-      act('reminder_add', { note, remind_at: iso }, 'یادآور ثبت شد ⏰').then(() => { $('remNote').value = ''; $('remWhen').value = defRem(); });
+      const parsed = new Date(when);
+      if (isNaN(+parsed)) return toast('زمان معتبر نیست', true);
+      const iso = parsed.toISOString();
+      act('reminder_add', { note, remind_at: iso }, 'یادآور ثبت شد ⏰').then(() => { $('remNote').value = ''; setRemWhen(defRem()); });
     };
     $('remAdd').addEventListener('click', addRem);
 
