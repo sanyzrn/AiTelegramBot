@@ -1,4 +1,5 @@
 name: Deploy Saeed AI to Supabase
+# Keep manual redeploys explicit and visible in the production history.
 on:
   push:
     branches: [main]
