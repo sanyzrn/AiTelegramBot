@@ -21,7 +21,7 @@ jobs:
       PROJECT_REF: zurfsjfulddkjiicegxh
     steps:
       - name: Check out trusted main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: true
 
