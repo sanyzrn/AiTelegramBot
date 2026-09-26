@@ -53,3 +53,16 @@ test('dashboard actions mutate only the verified user and validate input', async
   assert.equal((await handleWebApp(db, env, TOKEN, init, { action: 'drop_tables' })).status, 400);
   assert.equal((await handleWebApp(db, env, TOKEN, init, { action: 'task_delete', id: 'x' })).status, 400);
 });
+
+test('quick-add batch saves every expense or none', async () => {
+  const db = fakeDb({ saeed_ai_expenses: [] });
+  const init = await initFor(1);
+  const bad = await handleWebApp(db, env, TOKEN, init, { action: 'expenses_add', items: [{ description: 'میوه', amount: 900000 }, { description: 'x', amount: 5 }] });
+  assert.equal(bad.status, 400);
+  assert.equal(db.rows('saeed_ai_expenses').length, 0, 'a bad line saves nothing');
+  const ok = await handleWebApp(db, env, TOKEN, init, { action: 'expenses_add', items: [{ description: 'میوه', amount: 900000 }, { description: 'برنج', amount: 2800000 }] });
+  assert.equal(ok.status, 200);
+  assert.equal(db.rows('saeed_ai_expenses').length, 2);
+  assert.ok(db.rows('saeed_ai_expenses').every((r) => r.telegram_user_id === 1));
+  assert.equal((await handleWebApp(db, env, TOKEN, init, { action: 'expenses_add', items: [] })).status, 400);
+});

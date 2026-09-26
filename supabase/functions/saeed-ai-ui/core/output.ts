@@ -3,6 +3,9 @@ import { tg } from "./transport.ts";
 import { escapeHtml } from "../../_shared/format.ts";
 import { sendRich } from "../../_shared/telegram.ts";
 
+/** Only an explicit summary command turns prose into a copyable block («خلاصه‌ای از تاریخ بگو» stays prose). */
+const ASKS_SUMMARY = /(?:خلاصه[‌\s]*(?:اش|ش|اشو|شو|شون)?\s*کن|summari[sz]e|tl;?dr)/i;
+
 export const esc = escapeHtml;
 
 export function stripRepeatedIntro(text: string, asked: boolean) {
@@ -35,7 +38,7 @@ export async function deliver(chat: number, answer: string, tool: string, prompt
   if (sections.some((x) => x.type === "code")) {
     const tail = answer.slice(offset).trim();
     if (tail) sections.push({ type: "text", value: tail });
-  } else if (tool === "summarize" || /خلاصه|summari[sz]e/i.test(prompt)) {
+  } else if (tool === "summarize" || ASKS_SUMMARY.test(prompt)) {
     const lines = answer.split("\n"),
       idx = lines.findIndex((x: string) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x));
     if (idx > 0) {

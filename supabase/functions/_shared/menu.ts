@@ -48,23 +48,23 @@ export const BUTTON_COMMANDS: Record<string, string> = {
   "🔕 یادآورهای فعال": "یادآورهام",
 };
 
+/** Opens the tools guide page (examples of every automatic tool). */
+export const GUIDE_BUTTON = "📖 راهنمای ابزارها";
+
 /** Label of the optional Telegram Mini App button (shown only when WEBAPP_URL is configured). */
 export const DASHBOARD_BUTTON = "📊 داشبورد";
 
 export const MENU: Record<string, string[][]> = {
   home: [["💬 گفتگو", "🧰 ابزارها"], ["🗂 روزمره", "⚙️ تنظیمات"]],
+  // Every tool starts by itself from chat, photos, files or voice, so the tools
+  // page is a guide plus the few things that are not a message.
   tools: [
-    ["🌐 آنلاین", "💻 GitHub"],
-    ["📄 فایل‌خوان", "🖼 تحلیل عکس"],
-    ["🔤 متن عکس", "🎙 صوت به متن"],
-    ["📝 خلاصه", "🌍 ترجمه"],
-    ["✍️ بازنویسی", "💡 ایده‌پردازی"],
-    ["⏰ یادآور", "🧮 ماشین‌حساب"],
-    ["📧 ایمیل نگارش", "✅ تسک‌ها"],
-    ["📋 پروفایل من", "🎉 سرگرمی"],
-    ["📄 خروجی MD", "💬 گفتگو"],
-    ["🗂 روزمره", "🏠 خانه"],
+    [GUIDE_BUTTON],
+    ["🎉 سرگرمی", "📋 پروفایل من"],
+    ["📄 خروجی MD", "🗂 روزمره"],
+    ["🏠 خانه"],
   ],
+  guide: [["🎉 سرگرمی", "🗂 روزمره"], ["🧰 ابزارها", "🏠 خانه"]],
   life: [
     ["⏰ یادآور", "✅ تسک‌ها"],
     ["🛒 لیست خرید", "💰 خرج‌ها"],
@@ -146,6 +146,8 @@ export function rows(page: string, isAdmin: boolean, withDashboard = false): str
 export function allButtons(): string[] {
   const set = new Set<string>(["🛡 مدیریت", DASHBOARD_BUTTON]);
   for (const page of Object.values(MENU)) for (const row of page) for (const b of row) set.add(b);
+  // Older keyboards still on users' phones keep working after the slimming.
+  for (const label of Object.values(TOOLS)) set.add(label);
   return [...set];
 }
 

@@ -225,6 +225,21 @@ export async function handleWebApp(
       telegram_user_id: id, telegram_chat_id: id, description: description.slice(0, 200), amount_toman: String(amount),
     });
     if (error) throw Error("WEBAPP_EXPENSE_SAVE");
+  } else if (action === "expenses_add") {
+    // Quick-add batch: all or nothing, so a bad line never leaves half a list saved.
+    const list = Array.isArray(payload.items) ? payload.items.slice(0, 31) : [];
+    if (!list.length || list.length > 30) return bad("items must hold 1-30 expenses");
+    const rows = [];
+    for (const raw of list as Array<Record<string, unknown>>) {
+      const description = text2(raw?.description);
+      const amount = Number(raw?.amount);
+      if (!description || !Number.isSafeInteger(amount) || amount <= 0 || amount >= 1000000000000) {
+        return bad("every item needs a 2-200 char description and a whole toman amount");
+      }
+      rows.push({ telegram_user_id: id, telegram_chat_id: id, description: description.slice(0, 200), amount_toman: String(amount) });
+    }
+    const { error } = await db.from("saeed_ai_expenses").insert(rows);
+    if (error) throw Error("WEBAPP_EXPENSE_SAVE");
   } else if (action === "expense_delete") {
     await db.from("saeed_ai_expenses").delete().eq("id", key).eq("telegram_user_id", id);
   }

@@ -136,9 +136,10 @@ Deno.serve(async (req) => {
       console.error("CALLBACK_ACK", String(e).slice(0, 80));
     }
   }
+  // The one-time menu-button sync runs beside the update, never in front of it.
+  EdgeRuntime.waitUntil(syncMenuButton());
   EdgeRuntime.waitUntil(
     (async () => {
-      await syncMenuButton();
       try {
         if (c) return forward(update);
         if (!m) return;

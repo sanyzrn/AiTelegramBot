@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>سعید · داشبورد</title>
+  <title>سعید • داشبورد</title>
   <!-- API endpoint: overridden by ?api=… in WEBAPP_URL, e.g. https://<ref>.supabase.co/functions/v1/saeed-ai-webapp -->
   <meta name="saeed-api" content="">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,16 +23,31 @@
       --danger: var(--tg-theme-destructive-text-color, #e5484d);
       --danger-soft: color-mix(in srgb, var(--danger) 10%, transparent);
       --ok: #2e9e5b;
-      --line: color-mix(in srgb, var(--hint) 20%, transparent);
-      --r: 18px;
+      --warn: #f5a524;
+      --line: color-mix(in srgb, var(--hint) 18%, transparent);
+      --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px -12px rgba(0,0,0,.18);
+      --r: 20px;
+      --tabbar-h: 64px;
       color-scheme: light dark;
+    }
+    /* Outside Telegram (browser preview) follow the OS theme; inside it the --tg-theme-* values win. */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: var(--tg-theme-bg-color, #17191d);
+        --bg2: var(--tg-theme-secondary-bg-color, #0f1114);
+        --card: var(--tg-theme-section-bg-color, #1c1f24);
+        --text: var(--tg-theme-text-color, #f2f3f5);
+        --hint: var(--tg-theme-hint-color, #8b919c);
+        --accent: var(--tg-theme-button-color, #4c8dff);
+      }
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html { scroll-behavior: smooth; }
     body {
-      margin: 0; background: var(--bg); color: var(--text);
+      margin: 0; color: var(--text);
       font: 15px/1.7 Vazirmatn, system-ui, -apple-system, sans-serif;
-      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      padding-bottom: calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom));
+      background: var(--bg2);
       overscroll-behavior-y: none;
     }
     button { font: inherit; color: inherit; cursor: pointer; }
@@ -40,9 +55,16 @@
     svg { display: block; }
 
     /* ---------- header ---------- */
-    header { padding: 20px 20px 4px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    header .greet { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.2px; }
-    header .date { color: var(--hint); font-size: 12.5px; margin-top: 2px; }
+    header { padding: 18px 20px 2px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    header .who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .avatar {
+      width: 44px; height: 44px; flex: none; border-radius: 15px; display: grid; place-items: center;
+      font-weight: 800; font-size: 18px; color: var(--accent-text);
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #a855f7));
+      box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent);
+    }
+    header .greet { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    header .date { color: var(--hint); font-size: 12px; margin-top: 0; }
     .iconbtn {
       width: 38px; height: 38px; flex: none; border-radius: 13px; border: 1px solid var(--line);
       background: var(--card); color: var(--hint); display: grid; place-items: center;
@@ -54,26 +76,28 @@
 
     /* ---------- tabs ---------- */
     nav {
-      position: sticky; top: 0; z-index: 20; display: flex; gap: 4px; margin: 10px 16px 4px;
-      padding: 5px; border-radius: 16px; background: color-mix(in srgb, var(--bg) 82%, transparent);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border: 1px solid var(--line); overflow-x: auto; scrollbar-width: none;
+      position: fixed; z-index: 40; inset-inline: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
+      display: flex; gap: 2px; padding: 6px; height: var(--tabbar-h); max-width: 560px; margin-inline: auto;
+      border-radius: 22px; background: color-mix(in srgb, var(--card) 86%, transparent);
+      backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+      border: 1px solid var(--line); box-shadow: 0 10px 30px -10px rgba(0,0,0,.28);
     }
-    nav::-webkit-scrollbar { display: none; }
     nav button {
-      flex: 1 0 auto; border: 0; background: transparent; border-radius: 12px; padding: 8px 10px;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      color: var(--hint); font-weight: 600; font-size: 13px; white-space: nowrap; transition: all .15s ease;
+      flex: 1 1 0; min-width: 0; border: 0; background: transparent; border-radius: 16px; padding: 4px 2px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      color: var(--hint); font-weight: 600; font-size: 10.5px; white-space: nowrap; transition: color .15s ease, background .15s ease;
     }
-    nav button svg { width: 17px; height: 17px; }
-    nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+    nav button svg { width: 21px; height: 21px; transition: transform .2s cubic-bezier(.2,.8,.2,1); }
+    nav button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
+    nav button[aria-selected="true"] svg { transform: translateY(-1px) scale(1.06); }
 
     main { padding: 8px 16px 8px; }
     section[hidden] { display: none; }
 
     /* ---------- cards & primitives ---------- */
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin: 10px 0; }
-    .card > h2 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--hint); display: flex; align-items: center; gap: 8px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin: 12px 0; box-shadow: var(--shadow); }
+    .card > h2 { margin: 0 0 10px; font-size: 14.5px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .card > h2 .count { margin-inline-start: auto; font-size: 11.5px; font-weight: 600; color: var(--hint); background: var(--bg2); border-radius: 999px; padding: 1px 9px; }
     .card > h2 svg { width: 16px; height: 16px; color: var(--accent); }
     .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
     .row:first-of-type { border-top: 0; padding-top: 2px; }
@@ -93,7 +117,8 @@
     .edit:active { background: var(--accent-soft); color: var(--accent); }
     .btn { border: 1px solid var(--line); background: var(--card); border-radius: 13px; padding: 9px 16px; font-weight: 600; font-size: 13.5px; transition: transform .12s; }
     .btn:active { transform: scale(.96); }
-    .btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 30%, transparent); }
+    .btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; box-shadow: 0 6px 18px -4px color-mix(in srgb, var(--accent) 45%, transparent); }
+    .btn:disabled, .btn[aria-busy="true"] { opacity: .55; pointer-events: none; }
     .btn.ghost { background: transparent; }
     .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: transparent; }
     .btn.sm { padding: 6px 12px; font-size: 12.5px; border-radius: 11px; }
@@ -107,24 +132,43 @@
     .addrow { display: flex; gap: 8px; align-items: center; }
     .addrow .field { flex: 1; min-width: 0; }
     .empty { color: var(--hint); padding: 14px 4px; text-align: center; font-size: 13.5px; }
-    .empty b { display: block; font-size: 26px; margin-bottom: 4px; font-weight: 400; }
+    .empty b { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 8px; border-radius: 18px; background: var(--bg2); font-size: 24px; font-weight: 400; }
 
     /* ---------- stats ---------- */
-    .hero { position: relative; overflow: hidden; }
-    .hero .label { color: var(--hint); font-size: 12.5px; font-weight: 600; }
-    .hero .big { font-size: 34px; font-weight: 800; letter-spacing: -.4px; margin: 2px 0; font-feature-settings: "tnum"; }
-    .hero .sub { color: var(--hint); font-size: 12px; }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
-    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 12px 14px; }
-    .stat b { display: block; font-size: 21px; font-weight: 800; font-feature-settings: "tnum"; line-height: 1.3; }
-    .stat span { color: var(--hint); font-size: 11.5px; }
+    .hero {
+      position: relative; overflow: hidden; border: 0; color: #fff;
+      background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 70%, #a855f7) 0%, var(--accent) 45%, color-mix(in srgb, var(--accent) 75%, #0b1220) 100%);
+      box-shadow: 0 16px 36px -18px color-mix(in srgb, var(--accent) 80%, transparent);
+    }
+    .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.09); pointer-events: none; }
+    .hero::before { width: 180px; height: 180px; top: -70px; left: -50px; }
+    .hero::after { width: 120px; height: 120px; bottom: -60px; right: 30px; }
+    .hero .label { color: rgba(255,255,255,.82); font-size: 12.5px; font-weight: 600; position: relative; }
+    .hero .big { font-size: 34px; font-weight: 800; letter-spacing: -.4px; margin: 2px 0; font-feature-settings: "tnum"; position: relative; }
+    .hero .sub { color: rgba(255,255,255,.85); font-size: 12px; position: relative; }
+    .hero .trend { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.16); border-radius: 999px; padding: 2px 10px; }
+    .hero .bars rect, .hero svg rect { fill: rgba(255,255,255,.45); }
+    .hero svg rect.today { fill: #fff; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 17px; padding: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; }
+    .stat i { font-style: normal; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; font-size: 15px; }
+    .stat b { display: block; font-size: 19px; font-weight: 800; font-feature-settings: "tnum"; line-height: 1.25; }
+    .stat span { color: var(--hint); font-size: 11px; }
     .stat .n { color: var(--accent); }
     .stat .d { color: var(--danger); }
+    .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 4px; }
+    .quick button {
+      border: 1px solid var(--line); background: var(--card); border-radius: 16px; padding: 10px 4px 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--text);
+      box-shadow: var(--shadow); transition: transform .12s ease;
+    }
+    .quick button:active { transform: scale(.95); }
+    .quick button span { font-size: 20px; line-height: 1; }
 
     /* ---------- chart ---------- */
     .bars { width: 100%; height: 128px; }
-    .bars rect { fill: url(#barGrad); }
-    .bars rect.today { fill: var(--accent); }
+    #chart rect { fill: url(#barGrad); }
+    #chart rect.today { fill: var(--accent); }
     .bars rect:hover { opacity: .85; }
     .bars .axis { fill: var(--hint); font: 10px Vazirmatn, sans-serif; }
     .cat { margin: 10px 0; }
@@ -132,7 +176,8 @@
     .cat .t b { font-weight: 600; }
     .cat .t span { color: var(--hint); font-feature-settings: "tnum"; }
     .cat .track { height: 7px; border-radius: 4px; background: var(--bg2); margin-top: 5px; overflow: hidden; }
-    .cat .fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+    .cat .fill { height: 100%; border-radius: 4px; background: var(--c, var(--accent)); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+    .cat .t b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 3px; background: var(--c, var(--accent)); margin-inline-end: 7px; vertical-align: 1px; }
 
     /* ---------- chips / segmented ---------- */
     .seg { display: flex; gap: 6px; }
@@ -142,14 +187,16 @@
 
     /* ---------- toast & loading ---------- */
     #toast {
-      position: fixed; inset-inline: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 50;
+      position: fixed; inset-inline: 16px; bottom: calc(var(--tabbar-h) + 22px + env(safe-area-inset-bottom)); z-index: 50;
       padding: 12px 16px; border-radius: 14px; background: var(--text); color: var(--bg);
       opacity: 0; transform: translateY(8px); transition: all .25s ease; pointer-events: none; text-align: center; font-size: 13.5px;
       max-width: 420px; margin-inline: auto;
     }
     #toast.show { opacity: .96; transform: none; }
     #toast.err { background: var(--danger); color: #fff; }
-    .loading { color: var(--hint); text-align: center; padding: 60px 0; }
+    .loading { color: var(--hint); text-align: center; padding: 8px 0; }
+    .skel { border-radius: var(--r); margin: 12px 0; background: linear-gradient(90deg, var(--card) 25%, color-mix(in srgb, var(--hint) 12%, var(--card)) 37%, var(--card) 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; border: 1px solid var(--line); }
+    @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
     .loading .dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
     .loading .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: bounce 1s infinite ease-in-out; }
     .loading .dots i:nth-child(2) { animation-delay: .15s; }
@@ -160,9 +207,10 @@
 
     /* ---------- reminders timeline ---------- */
     .tl { position: relative; padding-inline-start: 4px; }
-    .tl .when { flex: none; width: 74px; text-align: center; background: var(--bg2); border-radius: 12px; padding: 6px 4px; }
+    .tl .when { flex: none; width: 74px; text-align: center; background: var(--accent-soft); color: var(--accent); border-radius: 14px; padding: 6px 4px; }
     .tl .when b { display: block; font-size: 15px; font-weight: 700; font-feature-settings: "tnum"; }
-    .tl .when span { font-size: 10.5px; color: var(--hint); }
+    .tl .when span { font-size: 10.5px; color: color-mix(in srgb, var(--accent) 70%, var(--hint)); }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
     .code { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
     .code b { font-size: 24px; letter-spacing: 6px; font-weight: 800; font-feature-settings: "tnum"; color: var(--accent); direction: ltr; }
@@ -226,9 +274,12 @@
 </head>
 <body>
   <header>
-    <div>
-      <h1 class="greet" id="greet">سلام حاجی 👋</h1>
-      <div class="date" id="date"></div>
+    <div class="who">
+      <div class="avatar" id="avatar" aria-hidden="true">س</div>
+      <div style="min-width:0">
+        <h1 class="greet" id="greet">سلام 👋</h1>
+        <div class="date" id="date"></div>
+      </div>
     </div>
     <button class="iconbtn" id="refresh" aria-label="به‌روزرسانی"></button>
   </header>
@@ -236,7 +287,12 @@
   <nav role="tablist" id="tabs"></nav>
 
   <main>
-    <div class="loading" id="loading"><div class="dots"><i></i><i></i><i></i></div>در حال گرفتن برنامه‌ات…</div>
+    <div class="loading" id="loading" aria-busy="true" aria-label="در حال بارگذاری">
+      <div class="skel" style="height:150px"></div>
+      <div class="stats"><div class="skel" style="height:92px;margin:0"></div><div class="skel" style="height:92px;margin:0"></div><div class="skel" style="height:92px;margin:0"></div></div>
+      <div class="skel" style="height:120px"></div>
+      <div class="skel" style="height:160px"></div>
+    </div>
     <div id="err" hidden class="empty"><b>🙈</b><span id="errText"></span><div style="margin-top:10px"><button class="btn primary" onclick="load()">دوباره تلاش کن</button></div></div>
 
     <!-- ==================== امروز ==================== -->
@@ -245,16 +301,22 @@
         <div class="label">خرج امروز</div>
         <div class="big" id="todaySpent">۰ تومان</div>
         <div class="sub" id="todaySub"></div>
-        <div style="margin-top:10px" id="miniChart"></div>
+        <svg id="miniChart" style="margin-top:12px;width:100%;height:44px;position:relative" viewBox="0 0 320 46" preserveAspectRatio="none" aria-hidden="true"></svg>
       </div>
       <div class="stats" id="stats"></div>
+      <div class="quick" id="quickActions">
+        <button type="button" data-go="tasks" data-focus="taskInput"><span>✅</span>کار</button>
+        <button type="button" data-go="remind" data-focus="remNote"><span>⏰</span>یادآور</button>
+        <button type="button" data-go="shop" data-focus="shopInput"><span>🛒</span>خرید</button>
+        <button type="button" data-go="more" data-focus="memInput"><span>🧠</span>حافظه</button>
+      </div>
       <div class="card fade">
         <h2 id="quickTitle">⚡ ثبت سریع خرج</h2>
         <div class="addrow">
           <input class="field" id="quickInput" placeholder="مثلاً: میوه ۹۰۰ هزار تومان" enterkeyhint="done">
           <button class="btn primary" id="quickBtn">ثبت</button>
         </div>
-        <div class="note">همین‌جا بنویس؛ اعداد حروفی هم می‌فهمم — «تاکسی پنجاه هزار تومان». چندتایی هم با ویرگول جدا کن.</div>
+        <div class="note">اعداد حروفی هم می‌فهمم: «تاکسی پنجاه هزار تومان». چندتا رو با ویرگول جدا کن تا یک‌جا ثبت بشن.</div>
       </div>
       <div class="card"><h2>💰 آخرین خرج‌ها</h2><div id="recentExpenses"></div></div>
       <div class="card"><h2>✅ کارهای باز</h2><div id="todayTasks"></div></div>
@@ -440,17 +502,18 @@
     })();
 
     const syncNativeColorScheme = () => {
-      const scheme = tg?.colorScheme === 'light' ? 'light' : 'dark';
+      const scheme = tg?.colorScheme || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.style.colorScheme = scheme;
       document.body.style.colorScheme = scheme;
     };
     syncNativeColorScheme();
     tg?.onEvent?.('themeChanged', syncNativeColorScheme);
-    tg?.setHeaderColor?.('bg_color'); tg?.setBackgroundColor?.('bg_color');
+    tg?.setHeaderColor?.('secondary_bg_color'); tg?.setBackgroundColor?.('secondary_bg_color');
 
     const params = new URLSearchParams(location.search);
     const API = params.get('api') || document.querySelector('meta[name="saeed-api"]').content;
     const $ = (id) => document.getElementById(id);
+    $('avatar').textContent = Array.from(telegramName)[0] || 'س';
     const el = (tag, attrs = {}, ...kids) => {
       const node = document.createElement(tag);
       for (const [k, v] of Object.entries(attrs)) {
@@ -508,6 +571,7 @@
       const d = new Date(iso);
       if (same(d, now)) return 'امروز';
       if (same(d, new Date(now.getTime() - 86400000))) return 'دیروز';
+      if (same(d, new Date(now.getTime() + 86400000))) return 'فردا';
       return tzFmt({ weekday: 'long', day: 'numeric', month: 'long' }).format(d);
     };
 
@@ -565,7 +629,7 @@
       const items = [];
       let missing = false;
       for (const piece of pieces) {
-        const words = fa2en(piece).replace(/([\d۰-۹٠-٩][\d۰-۹٠-۹.,٬،٫]*)/gu, ' $1 ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const words = fa2en(piece).replace(/([\d۰-۹٠-٩][\d۰-۹٠-٩.,٬،٫]*)/gu, ' $1 ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
         const desc = []; let i = 0;
         while (i < words.length) {
           const m = amtAt(words, i);
@@ -589,44 +653,87 @@
     }
 
     /* ---------- api ---------- */
+    const ERRORS = [
+      [/unauthorized/i, 'فقط از داخل تلگرام باز کن'],
+      [/forbidden/i, 'دسترسی نداری'],
+      [/task must be/i, 'کار باید بین ۲ تا ۲۰۰ حرف باشه'],
+      [/too many open tasks/i, 'حداکثر ۱۰۰ کار باز می‌تونی داشته باشی'],
+      [/note must be/i, 'متن یادآور باید بین ۲ تا ۲۰۰ حرف باشه'],
+      [/remind_at/i, 'زمان باید در آینده و حداکثر ۳۰ روز جلوتر باشه'],
+      [/too many active reminders/i, 'حداکثر ۵۰ یادآور فعال مجازه'],
+      [/description must be|every item needs/i, 'هر خرج یه توضیح (حداقل ۲ حرف) و مبلغ درست لازم داره'],
+      [/amount must be/i, 'مبلغ رو به تومان و درست بنویس'],
+      [/items must hold/i, 'حداکثر ۳۰ خرج رو یک‌جا ثبت کن'],
+      [/items required/i, 'چی لازم داری؟'],
+      [/already joined/i, 'تو عضو یه لیست مشترکی؛ اول ازش خارج شو'],
+      [/code must be/i, 'کد دعوت باید ۶ رقم باشه'],
+      [/invalid or expired code/i, 'این کد معتبر نیست یا منقضی شده'],
+      [/your own list/i, 'این کد مال لیست خودته 😄'],
+      [/already own a shared list/i, 'خودت یه لیست مشترک داری؛ اول اعضا رو خارج کن'],
+      [/fact must be/i, 'متن حافظه باید بین ۳ تا ۳۰۰ حرف باشه'],
+      [/memory is full/i, 'حافظه پره (حداکثر ۳۰ مورد)'],
+      [/unknown watcher kind/i, 'نوع هشدار معتبر نیست'],
+      [/too many active alerts/i, 'حداکثر ۱۰ هشدار فعال مجازه'],
+      [/threshold/i, 'حد هشدار رو درست بنویس'],
+      [/city not found/i, 'این شهر رو پیدا نکردم؛ اسم دیگه‌ای امتحان کن'],
+      [/city must be/i, 'اسم شهر رو درست بنویس'],
+      [/unknown timezone/i, 'منطقه زمانی معتبر نیست؛ مثلاً Europe/Berlin'],
+      [/send_hour/i, 'ساعت ارسال باید بین ۵ تا ۱۱ صبح باشه'],
+      [/not found/i, 'این مورد دیگه وجود نداره؛ صفحه رو تازه کن'],
+    ];
+    const faError = (msg, status) => {
+      for (const [rx, fa] of ERRORS) if (rx.test(msg || '')) return fa;
+      return status >= 500 ? 'سرور موقتاً جواب نداد؛ چند لحظه دیگه دوباره امتحان کن' : 'یه مشکلی پیش اومد؛ دوباره امتحان کن';
+    };
     async function call(action, extra = {}) {
-      if (!API) throw new Error('آدرس API تنظیم نشده');
-      const r = await fetch(API, {
+      if (!API) throw new Error('آدرس API داشبورد تنظیم نشده');
+      let r;
+      try {
+        r = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg?.initData || '' },
         body: JSON.stringify({ action, ...extra }),
-      });
+        });
+      } catch { throw new Error('اتصال برقرار نشد؛ اینترنتت رو چک کن'); }
       const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(r.status === 401 ? 'فقط از داخل تلگرام باز کن' : r.status === 403 ? 'دسترسی نداری' : body.error || 'خطا');
+      if (!r.ok) throw new Error(faError(r.status === 401 ? 'unauthorized' : r.status === 403 ? 'forbidden' : body.error, r.status));
       return body;
     }
     function toast(text, isErr = false) {
       const t = $('toast');
       t.textContent = text; t.className = 'show' + (isErr ? ' err' : '');
-      clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 2400);
+      clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), isErr ? 3600 : 2200);
     }
+    /** Runs one API action; resolves true on success so callers clear inputs only then. */
     async function act(action, extra, okText) {
-      if (busy) return;
+      if (busy) return false;
       busy = true;
+      document.body.setAttribute('aria-busy', 'true');
       try {
         tg?.HapticFeedback?.impactOccurred('light');
         const body = await call(action, extra);
         state = body;
         render();
-        if (okText) toast(okText);
+        if (okText) { toast(okText); tg?.HapticFeedback?.notificationOccurred?.('success'); }
         if (body.code) shareCode(body.code);
-      } catch (e) { toast(e.message || String(e), true); }
-      finally { busy = false; }
+        return true;
+      } catch (e) {
+        toast(e.message || String(e), true);
+        tg?.HapticFeedback?.notificationOccurred?.('error');
+        return false;
+      } finally { busy = false; document.body.removeAttribute('aria-busy'); }
     }
     async function load() {
       $('err').hidden = true;
-      $('loading').hidden = false;
+      // Refreshing keeps the current view; only the first load shows the skeleton.
+      $('loading').hidden = !!state;
       try {
         state = await call('summary');
         show(tab);
         $('loading').hidden = true;
       } catch (e) {
         $('loading').hidden = true;
+        if (state) return toast(e.message || String(e), true);
         $('errText').textContent = e.message || String(e);
         $('err').hidden = false;
       }
@@ -643,6 +750,7 @@
     ];
     let tab = 'today';
     function show(name) {
+      if (name !== tab) window.scrollTo({ top: 0 });
       tab = name;
       for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
       for (const s of document.querySelectorAll('main section')) s.hidden = s.id !== 'tab-' + name || !state;
@@ -670,7 +778,7 @@
       const pad = mini ? 2 : 6;
       const bw = (w - pad * 2) / data.length;
       const h = height - (mini ? 0 : 16);
-      let out = `<defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".95"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".38"/></linearGradient></defs>`;
+      let out = `<defs><linearGradient id="${mini ? 'barGradMini' : 'barGrad'}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--accent);stop-opacity:.38"/></linearGradient></defs>`;
       data.forEach((d, i) => {
         const bh = d.amount ? Math.max(Math.round((d.amount / max) * h), mini ? 3 : 4) : 0;
         const x = w - pad - (i + 1) * bw + 1.5;
@@ -709,20 +817,26 @@
       const t = state.today;
       $('todaySpent').textContent = toman(t.spent);
       const y = state.expenses.days.at(-2)?.amount || 0;
-      $('todaySub').textContent = y > 0
-        ? (t.spent > y ? `↑ ${fa(Math.round(((t.spent - y) / y) * 100))}٪ بیشتر از دیروز` : t.spent < y ? `↓ ${fa(Math.round(((y - t.spent) / y) * 100))}٪ کمتر از دیروز` : 'مثل دیروز')
-        : 'روز خوبی برای شروعه ✨';
+      const trend = y > 0
+        ? (t.spent > y ? `↑ ${fa(Math.round(((t.spent - y) / y) * 100))}٪ بیشتر از دیروز` : t.spent < y ? `↓ ${fa(Math.round(((y - t.spent) / y) * 100))}٪ کمتر از دیروز` : 'درست مثل دیروز')
+        : t.spent ? 'دیروز خرجی ثبت نشده بود' : 'هنوز خرجی ثبت نکردی ✨';
+      const week = state.expenses.days.slice(-7).reduce((sum, d) => sum + d.amount, 0);
+      $('todaySub').replaceChildren(el('span', { class: 'trend' }, trend), `  •  ۷ روز اخیر: ${toman(week)}`);
       buildBars(state.expenses.days, { mini: true, height: 46 });
+      const next = t.next_reminder ? new Date(t.next_reminder.at) : null;
+      const nextDay = next ? dayLabel(next.toISOString()) : '';
+      const stat = (icon, tint, value, label, go) => el('button', { class: 'stat', type: 'button', style: 'text-align:start;font:inherit', onclick: () => show(go) },
+        el('i', { style: `background:color-mix(in srgb, ${tint} 14%, transparent)` }, icon), el('b', {}, value), el('span', {}, label));
       $('stats').replaceChildren(
-        el('div', { class: 'stat' }, el('b', { class: 'n' }, fa(t.tasks_open)), el('span', {}, 'کار باز')),
-        el('div', { class: 'stat' }, el('b', { class: 'd' }, fa(t.shopping_open)), el('span', {}, 'قلم خرید باز')),
-        el('div', { class: 'stat' }, el('b', {}, t.next_reminder ? tzFmt({ hour: '2-digit', minute: '2-digit' }).format(new Date(t.next_reminder.at)) : '—'), el('span', {}, 'یادآور بعدی')),
+        stat('✅', 'var(--accent)', fa(t.tasks_open), 'کار باز', 'tasks'),
+        stat('🛒', 'var(--danger)', fa(t.shopping_open), 'قلم خرید', 'shop'),
+        stat('⏰', 'var(--warn)', next ? tzFmt({ hour: '2-digit', minute: '2-digit' }).format(next) : '—', next ? 'یادآور ' + nextDay.split(' ')[0] : 'یادآور بعدی', 'remind'),
       );
       const recent = $('recentExpenses'); recent.replaceChildren();
       if (!state.expenses.list.length) recent.append(el('div', { class: 'empty' }, el('b', {}, '💸'), 'هنوز خرجی ثبت نکردی.'));
       for (const x of state.expenses.list.slice(0, 3)) {
         recent.append(row2({
-          main: x.description, sub: dayLabel(x.created_at) + ' · ' + toman(x.amount),
+          main: x.description, sub: dayLabel(x.created_at) + ' • ' + toman(x.amount),
           onDel: () => act('expense_delete', { id: x.id }, 'پاک شد'),
         }));
       }
@@ -740,7 +854,7 @@
       if (!state.reminders.length) tr.append(el('div', { class: 'empty' }, el('b', {}, '⏰'), 'یادآور فعالی نداری.'));
       for (const r of state.reminders.slice(0, 3)) {
         tr.append(row2({
-          main: r.note, sub: tzFmt({ weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(r.remind_at)) + (r.repeat_rule !== 'none' ? ' · 🔁' : ''),
+          main: r.note, sub: tzFmt({ weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(r.remind_at)) + (r.repeat_rule !== 'none' ? ' • 🔁' : ''),
           onDel: () => act('reminder_cancel', { id: r.id }, 'لغو شد'),
         }));
       }
@@ -754,10 +868,14 @@
       const cats = $('cats'); cats.replaceChildren();
       if (!state.expenses.categories.length) cats.append(el('div', { class: 'empty' }, el('b', {}, '🏷'), 'با ثبت خرج، دسته‌بندی‌ها رو اینجا می‌بینیم.'));
       const top = state.expenses.categories[0]?.amount || 1;
-      for (const c of state.expenses.categories) {
+      const total = state.expenses.total || 1;
+      const PALETTE = ['var(--accent)', '#a855f7', '#f5a524', '#2e9e5b', '#e5484d', '#06b6d4', '#ec4899', '#64748b'];
+      state.expenses.categories.forEach((c, i) => {
         const fill = el('div', { class: 'fill' }); fill.style.width = Math.max(4, Math.round((c.amount / top) * 100)) + '%';
-        cats.append(el('div', { class: 'cat' }, el('div', { class: 't' }, el('b', {}, c.name), el('span', {}, toman(c.amount))), el('div', { class: 'track' }, fill)));
-      }
+        const row = el('div', { class: 'cat' }, el('div', { class: 't' }, el('b', {}, c.name), el('span', {}, `${toman(c.amount)} • ${fa(Math.round((c.amount / total) * 100))}٪`)), el('div', { class: 'track' }, fill));
+        row.style.setProperty('--c', PALETTE[i % PALETTE.length]);
+        cats.append(row);
+      });
       const list = $('expList'); list.replaceChildren();
       if (!state.expenses.list.length) list.append(el('div', { class: 'empty' }, el('b', {}, '🧾'), 'اولین خرجت رو از فرم بالا ثبت کن.'));
       let lastDay = '';
@@ -871,7 +989,7 @@
       $('b_weekly').checked = b.weekly;
       $('b_hour').value = String(b.send_hour);
       $('cityNow').textContent = `شهر فعلی: ${b.city}` + (b.city_name && b.city_name !== b.city ? ` (${b.city_name})` : '');
-      $('tzNow').textContent = `منطقه فعلی: ${state.timezone_label} · ${state.timezone}`;
+      $('tzNow').textContent = `منطقه فعلی: ${state.timezone_label} • ${state.timezone}`;
       const mem = $('memList'); mem.replaceChildren();
       if (!state.memories.length) mem.append(el('div', { class: 'empty' }, el('b', {}, '🧠'), 'چیزی ازت یادم نیست؛ خوبی‌ها رو بگو یادم بمونه.'));
       for (const m of state.memories) {
@@ -907,13 +1025,20 @@
       if (!items.length) {
         return toast(missing ? 'مبلغ رو با واحد بنویس؛ مثلاً «میوه ۹۰۰ هزار تومان»' : 'فرمت رو نفهمیدم؛ مثلاً: میوه ۹۰۰ هزار تومان', true);
       }
-      (async () => {
-        for (const x of items) await call('expense_add', { description: x.desc, amount: x.amount });
-        state = await call('summary');
-        render();
-        toast(items.length > 1 ? `${fa(items.length)} خرج ثبت شد ✅` : 'ثبت شد ✅');
-        $('quickInput').value = '';
-      })().catch((e) => toast(e.message, true));
+      if (items.length > 30) return toast('حداکثر ۳۰ خرج رو یک‌جا ثبت کن', true);
+      const total = items.reduce((sum, x) => sum + x.amount, 0);
+      const done = items.length > 1 ? `${fa(items.length)} خرج ثبت شد؛ جمع ${toman(total)} ✅` : `ثبت شد: ${items[0].desc}، ${toman(total)} ✅`;
+      $('quickBtn').setAttribute('aria-busy', 'true');
+      act('expenses_add', { items: items.map((x) => ({ description: x.desc, amount: x.amount })) }, done)
+        .then((ok) => { if (ok) $('quickInput').value = ''; })
+        .finally(() => $('quickBtn').removeAttribute('aria-busy'));
+    }
+    for (const b of $('quickActions').querySelectorAll('button')) {
+      b.addEventListener('click', () => {
+        show(b.dataset.go);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => $(b.dataset.focus)?.focus(), 250);
+      });
     }
     $('quickBtn').addEventListener('click', quickAdd);
     onEnter($('quickInput'), quickAdd);
@@ -925,13 +1050,13 @@
       const raw = fa2en($('expAmount').value).replace(/[,٬،\s]/g, '');
       if (description.length < 2) return toast('چی خریدی رو بنویس (حداقل ۲ حرف)', true);
       if (!/^\d{1,9}$/.test(raw)) return toast('مبلغ رو درست بنویس', true);
-      act('expense_add', { description, amount: Number(raw) * unit }, 'ثبت شد ✅').then(() => { $('expDesc').value = ''; $('expAmount').value = ''; });
+      act('expense_add', { description, amount: Number(raw) * unit }, 'ثبت شد ✅').then((ok) => { if (ok) { $('expDesc').value = ''; $('expAmount').value = ''; } });
     });
 
     const addTask = () => {
       const text = $('taskInput').value.trim();
       if (text.length < 2) return toast('کار رو واضح‌تر بنویس', true);
-      act('task_add', { text }, 'ثبت شد ✅').then(() => ($('taskInput').value = ''));
+      act('task_add', { text }, 'ثبت شد ✅').then((ok) => ok && ($('taskInput').value = ''));
     };
     $('taskAdd').addEventListener('click', addTask);
     onEnter($('taskInput'), addTask);
@@ -1078,14 +1203,14 @@
       const parsed = new Date(when);
       if (isNaN(+parsed)) return toast('زمان معتبر نیست', true);
       const iso = parsed.toISOString();
-      act('reminder_add', { note, remind_at: iso }, 'یادآور ثبت شد ⏰').then(() => { $('remNote').value = ''; setRemWhen(defRem()); });
+      act('reminder_add', { note, remind_at: iso }, 'یادآور ثبت شد ⏰').then((ok) => { if (ok) { $('remNote').value = ''; setRemWhen(defRem()); } });
     };
     $('remAdd').addEventListener('click', addRem);
 
     const addShop = () => {
       const items = $('shopInput').value.trim();
       if (!items) return toast('چی لازم داری؟', true);
-      act('shop_add', { items }, 'اضافه شد 🛒').then(() => ($('shopInput').value = ''));
+      act('shop_add', { items }, 'اضافه شد 🛒').then((ok) => ok && ($('shopInput').value = ''));
     };
     $('shopAdd').addEventListener('click', addShop);
     onEnter($('shopInput'), addShop);
@@ -1097,19 +1222,19 @@
     $('citySet').addEventListener('click', () => {
       const city = $('cityInput').value.trim();
       if (city.length < 2) return toast('اسم شهر رو بنویس', true);
-      act('city_set', { city }, 'شهر ذخیره شد 🏙').then(() => ($('cityInput').value = ''));
+      act('city_set', { city }, 'شهر ذخیره شد 🏙').then((ok) => ok && ($('cityInput').value = ''));
     });
     onEnter($('cityInput'), () => $('citySet').click());
     $('tzSet').addEventListener('click', () => {
       const timezone = $('tzInput').value.trim();
       if (!timezone) return toast('منطقه رو بنویس؛ مثلاً Europe/Berlin', true);
-      act('timezone_set', { timezone }, 'ذخیره شد 🕰').then(() => ($('tzInput').value = ''));
+      act('timezone_set', { timezone }, 'ذخیره شد 🕰').then((ok) => ok && ($('tzInput').value = ''));
     });
 
     const addMem = () => {
       const fact = $('memInput').value.trim();
       if (fact.length < 3) return toast('کامل‌تر بگو (حداقل ۳ حرف)', true);
-      act('memory_add', { fact }, 'یادم می‌مونه 🧠').then(() => ($('memInput').value = ''));
+      act('memory_add', { fact }, 'یادم می‌مونه 🧠').then((ok) => ok && ($('memInput').value = ''));
     };
     $('memAdd').addEventListener('click', addMem);
     onEnter($('memInput'), addMem);
@@ -1130,7 +1255,7 @@
       if (watchKind === 'rain') return act('watcher_add', { kind: 'rain' }, 'هشدار بارون ثبت شد ☔');
       const raw = fa2en($('watchThreshold').value).replace(/[,٬،\s]/g, '');
       if (!/^\d{1,10}$/.test(raw)) return toast('حد رو به تومان بنویس', true);
-      act('watcher_add', { kind: watchKind, threshold: Number(raw) }, 'هشدار ثبت شد 🔔').then(() => ($('watchThreshold').value = ''));
+      act('watcher_add', { kind: watchKind, threshold: Number(raw) }, 'هشدار ثبت شد 🔔').then((ok) => ok && ($('watchThreshold').value = ''));
     });
 
     $('refresh').innerHTML = ICON.refresh;
