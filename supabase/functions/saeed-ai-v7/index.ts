@@ -12,6 +12,7 @@ import { adminInput, allowed, cfg, exportAll, exportMd, pref, save, stats } from
 import { charge, retry, speak, startWork } from "./core/work.ts";
 import { chooseVoice, handleVoiceReply, voiceAction } from "./core/voice.ts";
 import { MENU, TOOLS, keyboard, navigate, rows, show } from "./core/ui.ts";
+import { GUIDE_BUTTON } from "./core/menu.ts";
 import { doneTask, profile, saveTasks, scheduleRealTimer, setReminder } from "./core/life.ts";
 import { doc, media } from "./core/media.ts";
 import type { TgMessage, TgUpdate } from "../_shared/telegram.ts";
@@ -93,7 +94,11 @@ async function message(original: TgMessage, update: number) {
   if (text && !text.startsWith("/") && !SPEAK.test(text) && (replied?.photo?.length || replied?.document))
     m = { ...m, text: "", caption: text, photo: replied.photo || null, document: replied.document || null, reply_to_message: null };
   if (m.photo || m.document) return mediaMessage(m, update, p.pending_tool);
-  if (/^\/(start|menu|help)(?:@\w+)?$/.test(text)) {
+  if (/^\/help(?:@\w+)?$/.test(text)) {
+    await save(id, { pending_tool: "chat" });
+    return show(id, chat, "guide");
+  }
+  if (/^\/(start|menu)(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "chat" });
     return show(id, chat, "home");
   }
@@ -115,15 +120,15 @@ async function message(original: TgMessage, update: number) {
   if (/^\/profile(?:@\w+)?$/.test(text)) return profile(id, chat);
   if (/^\/repo(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "repo" });
-    return show(id, chat, "tools");
+    return send(chat, "💻 لینک مخزن عمومی GitHub رو بفرست؛ مثلاً https://github.com/owner/repo");
   }
   if (/^\/docs(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "documents" });
-    return show(id, chat, "tools");
+    return send(chat, "📄 فایل PDF، Word، Excel، Markdown یا CSV رو بفرست؛ اگه سؤال خاصی داری توی کپشن بنویس.");
   }
   if (/^\/web(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "web" });
-    return show(id, chat, "tools");
+    return send(chat, "🌐 چی رو آنلاین بگردم؟ سؤالت رو بنویس.");
   }
   if (/^\/receipt(?:@\w+)?$/.test(text)) {
     await save(id, { pending_tool: "receipt" });
@@ -234,9 +239,13 @@ async function message(original: TgMessage, update: number) {
       await setPendingExpenses(life(m.from), id, true);
       return send(chat, "💸 بفرست حاجی؛ هر خط یکی — مثلاً «خرید میوه ۹۰۰ هزار تومان». چند خطی هم می‌تونه باشه؛ همه رو با هم ثبت می‌کنم. با /cancel منصرف شو.");
     }
-    return send(chat, inferred === "shopping" ? "برای افزودن خرید بنویس: به لیست خرید اضافه کن شیر، نان." : "برای صبح‌نامه بنویس: صبح‌نامه روشن یا خاموش؛ شهرت رو هم می‌تونی با «شهر من اصفهان» انتخاب کنی.");
+    return send(chat, inferred === "shopping"
+      ? "🛒 برای اضافه‌کردن به لیست خرید این‌جوری بنویس:\n«به لیست خرید اضافه کن شیر، نون، تخم‌مرغ»\nدیدن لیست: «لیست خرید» · اشتراک با خانواده: «اشتراک لیست خرید»"
+      : "☀️ صبح‌نامه: «صبح‌نامه روشن» یا «صبح‌نامه خاموش»\nشهرت رو هم با «شهر من اصفهان» تنظیم کن تا هوای درست رو بگم.");
   }
-  if (inferred === "calc") return send(chat, "این فرمت محاسبه رو دقیق پشتیبانی نمی‌کنم. مثلاً «۱۲٪ از ۲ میلیون» یا «۱.۲ + ۳.۴» رو بفرست.");
+  // Exact arithmetic already ran above; anything else (word problems, units,
+  // formulas) goes to the model's step-by-step calculator instead of a refusal.
+  if (inferred === "calc") return startWork(m, update, "calc", requestText, null);
   if (inferred === "repo") {
     const link = requestText.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?\/?/i);
     if (link) return startWork(m, update, "repo", link[0], null);
@@ -308,7 +317,7 @@ Deno.serve(async (req) => {
       fun_menu:
         rows("fun", false).flat().length === 7 &&
         rows("fun", false).flat().includes("🔮 طالع"),
-      tools_has_remind: rows("tools", false).flat().includes("⏰ یادآور"),
+      tools_has_guide: rows("tools", false).flat().includes(GUIDE_BUTTON),
       tools_has_fun: rows("tools", false).flat().includes("🎉 سرگرمی"),
       tools_has_profile: rows("tools", false).flat().includes("📋 پروفایل من"),
       all_pages_reply: Object.keys(MENU).every(
@@ -317,7 +326,7 @@ Deno.serve(async (req) => {
       home_buttons: rows("home", false).flat(),
       home_minimal: rows("home", false).flat().length === 4,
       life_page: rows("life", false).flat().includes("🛒 لیست خرید"),
-      github_in_tools: rows("tools", false).flat().includes("💻 GitHub"),
+      guide_page: rows("guide", false).flat().includes("🧰 ابزارها"),
       tone_in_settings: rows("settings", false).flat().includes("🎭 لحن"),
       md_in_tools: rows("tools", false).flat().includes("📄 خروجی MD"),
       admin_hidden:

@@ -147,7 +147,7 @@ export type ExpenseParse = { items: ParsedExpense[]; header: boolean; missingUni
 /** Normalize glued digits: «۹۰۰هزارتومان» → « ۹۰۰ هزار تومان ». */
 function unglue(text: string): string {
   return text
-    .replace(/([\d۰-۹٠-٩][\d۰-۹٠-۹.,٬،٫]*)/gu, " $1 ")
+    .replace(/([\d۰-۹٠-٩][\d۰-۹٠-٩.,٬،٫]*)/gu, " $1 ")
     .replace(/\s+/g, " ")
     .trim();
 }

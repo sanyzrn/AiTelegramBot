@@ -3,6 +3,9 @@ import { TOKEN, WEBAPP_URL, admin, esc, tg } from "./state.ts";
 import { keyboard } from "./menu.ts";
 import { safeEqual, sendPlain, sendRich, webhookSecret } from "../../_shared/telegram.ts";
 
+/** Only an explicit summary command turns prose into a copyable block («خلاصه‌ای از تاریخ بگو» stays prose). */
+const ASKS_SUMMARY = /(?:خلاصه[‌\s]*(?:اش|ش|اشو|شو|شون)?\s*کن|summari[sz]e|tl;?dr)/i;
+
 type Part = [type: "text" | "code", body: string, lang: string];
 
 let HOOK = "";
@@ -60,12 +63,12 @@ export function sections(text: string, tool: string, prompt: string): Part[] {
     if (text.slice(end).trim())
       parts.push(["text", text.slice(end).trim(), ""]);
   } else if (
-    ["summarize", "ocr", "transcribe", "translate", "rewrite", "tasks", "calc", "email"].includes(tool) ||
-    /خلاصه|summari[sz]e/i.test(prompt)
+    ["summarize", "ocr", "transcribe", "translate", "rewrite", "email"].includes(tool) ||
+    ASKS_SUMMARY.test(prompt)
   ) {
     const ls = text.split("\n"),
       i =
-        tool === "summarize" || /خلاصه|summari[sz]e/i.test(prompt)
+        tool === "summarize" || ASKS_SUMMARY.test(prompt)
           ? ls.findIndex((x: string) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(x))
           : -1;
     if (i > 0) {

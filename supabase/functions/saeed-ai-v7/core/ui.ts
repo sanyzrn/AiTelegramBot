@@ -9,7 +9,8 @@ import { formatLocal, userTimeZone } from "../../_shared/timezone.ts";
 import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from "../../_shared/bot-config.ts";
 import { capabilityLine, resolveCapabilities } from "../../_shared/capabilities.ts";
 
-import { ADMIN_PAGES, BUTTON_COMMANDS, DASHBOARD_BUTTON, TONES, SIZES, LANG, TOOLS } from "./menu.ts";
+import { GUIDE_TEXT } from "../../_shared/guide.ts";
+import { ADMIN_PAGES, BUTTON_COMMANDS, DASHBOARD_BUTTON, GUIDE_BUTTON, TONES, SIZES, LANG, TOOLS } from "./menu.ts";
 export { TONES, SIZES, LANG, TOOLS, MENU, rows, keyboard, toneGuide } from "./menu.ts";
 
 /** Best-effort capability summary of the active provider (never blocks the menu). */
@@ -32,25 +33,26 @@ export async function show(id: number, chat: number, page: string) {
     s = await cfg();
   let body =
     {
-      home: "بفرما حاجی چی تو ذهنته 😁",
-      tools: "🧰 جعبه‌ابزار\nگزینه موردنظرت رو از کیبورد پایین انتخاب کن. 😎",
-      life: "🗂 کارهای روزمره\nیادآور، تسک، خرید، خرج، هشدار، صبح‌نامه و پومودورو همه این‌جان. مستقیم هم می‌تونی بنویسی؛ مثلاً «ناهار ۴۸۰ هزار تومان»، «چند تا هزینه ثبت کن» بعد لیستش، یا «وقتی دلار از ۹۵ هزار رد شد خبرم کن». 😎",
+      home: "بفرما حاجی، چی تو ذهنته؟ 😁\nهر چی می‌خوای همین‌جا بنویس، عکس یا ویس بفرست؛ خودم می‌فهمم باید چی کار کنم.",
+      tools: "🧰 جعبه‌ابزار\nدیگه لازم نیست ابزار انتخاب کنی: یادآور، خرج، رسید، ترجمه، خلاصه، جست‌وجو و بقیه از خود پیامت فعال می‌شن. ✨\n«📖 راهنمای ابزارها» رو بزن تا همه‌شون رو با مثال ببینی.",
+      guide: GUIDE_TEXT,
+      life: "🗂 کارهای روزمره\nیادآور، تسک، خرید، خرج، هشدار، صبح‌نامه و پومودورو همه این‌جان.\nمستقیم هم می‌تونی بنویسی؛ مثلاً:\n• «ناهار ۴۸۰ هزار تومان»\n• «فردا ۸ صبح یادم بنداز»\n• «وقتی دلار از ۹۵ هزار رد شد خبرم کن» 😎",
       settings: `⚙️ تنظیمات شخصی\n🎭 ${TONES[p.tone]}\n📏 ${SIZES[p.answer_length]}\n🌐 ${LANG[p.language]}`,
-      tones: "🎭 چه لحنی انتخاب می‌کنی؟",
-      length: "📏 اندازه جواب رو انتخاب کن.",
-      language: "🌐 زبان رو انتخاب کن.",
+      tones: "🎭 دوست داری چه‌جوری باهات حرف بزنم؟ یکی رو انتخاب کن.",
+      length: "📏 جواب‌هام چقدر باشه؟\n⚡ کوتاه: سریع و خلاصه · 📏 متعادل: پیش‌فرض · 📚 مفصل: کامل با جزئیات",
+      language: "🌐 به چه زبونی جواب بدم؟ «خودکار» یعنی به همون زبونی که می‌نویسی.",
       privacy:
         "🔒 گفت‌وگوها فقط حدود ۱۵ دقیقه برای ادامه چت خونده می‌شن و به‌صورت دوره‌ای خودکار از دیتابیس پاک می‌شن؛ پیام‌های خود تلگرام باقی می‌مونن.",
-      fun: "🎉 سرگرمی با Saeed AI 🎪\nیه گزینه رو انتخاب کن تا شروع کنیم! 😁",
-      tasks: "✅ مدیر تسک‌ها\nکارهاتو بگو تا برات لیست کنم.",
+      fun: "🎉 وقت سرگرمیه! 🎪\nیکی رو بزن، یا همین‌جا بنویس «یه جوک بگو» یا «یه معما بپرس». 😁",
+      tasks: "✅ مدیر تسک‌ها\nکارهاتو بنویس تا به لیستت اضافه کنم؛ مثلاً «خرید نون و زنگ به مامان».",
       tasks_delete_confirm: "⚠️ تمام تسک‌های تو، حتی تسک‌های انجام‌شده، برای همیشه پاک می‌شن. مطمئنی؟ برای حذف، دکمه تأیید رو بزن؛ برای حفظ تسک‌ها انصراف بده.",
-      reset: "⚠️ مطمئنی می‌خوای تاریخچه خودت رو پاک کنی؟",
+      reset: "⚠️ مطمئنی می‌خوای تاریخچه‌ی گفت‌وگومون پاک بشه؟ حافظه‌ها، تسک‌ها و خرج‌هات دست نمی‌خورن.",
       admin: `🛡 پنل مدیریت Saeed AI 👑\n🔎 جست‌وجوی گوگل در چت عادی: ${s.chatSearch && s.provider === "gemini" ? "روشن" : "خاموش (فقط با Gemini فعال)"}`,
       users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
       models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}`,
       quota: `📊 سقف پیش‌فرض روزانه: ${s.daily === 0 ? "نامحدود" : s.daily + " پیام"}`,
-      voice: "🎙 ویست رسید. از دکمه‌های پایین انتخاب کن چی کارش کنم. 😁",
-      retry: "🙈 فعلاً پاسخت آماده نشد. از پایین «تلاش مجدد» رو بزن.",
+      voice: "🎙 ویست رسید! بگو چی کارش کنم: متنش رو بنویسم، خلاصه کنم، ترجمه کنم یا درخواستش رو انجام بدم؟ 😁",
+      retry: "🙈 این بار جواب آماده نشد. از دکمه پایین «🔄 تلاش مجدد» رو بزن.",
     }[page] || "🏠 خانه";
   // Incompatible tools are surfaced, not silently broken: the tools page names
   // exactly what the ACTIVE model cannot accept right now. A slow capability
@@ -119,6 +121,11 @@ export async function navigate(id: number, chat: number, text: string, p: Pref) 
     "✅ تسک‌ها": "tasks",
     "🗂 روزمره": "life",
   };
+  if (text === GUIDE_BUTTON) {
+    await save(id, { pending_tool: "chat" });
+    await show(id, chat, "guide");
+    return true;
+  }
   if (pages[text]) {
     if (pages[text] === "home") await save(id, { pending_tool: "chat" });
     if (pages[text] === "tasks") {
