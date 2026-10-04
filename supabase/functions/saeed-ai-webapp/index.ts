@@ -1,4 +1,4 @@
-/** Saeed AI Mini App dashboard API: Telegram-signed initData is the only credential. */
+/** Nexa Mini App dashboard API: Telegram-signed initData is the only credential. */
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { APP_VERSION } from "../_shared/version.ts";
 import { readAccessEnv } from "../_shared/access.ts";
