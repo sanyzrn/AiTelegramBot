@@ -10,7 +10,7 @@ import { loadMemories } from "../../_shared/life-memories.ts";
 import { faDigits } from "../../_shared/format.ts";
 import { admin, db } from "./state.ts";
 import { send, tg } from "./transport.ts";
-import { cfg, pref, save } from "./admin.ts";
+import { cfg, pref, save, userCfg } from "./admin.ts";
 import { ai } from "./model.ts";
 import { LANG, SIZES, TONES } from "./menu.ts";
 
@@ -39,7 +39,9 @@ export async function scheduleRealTimer(id: number, chat: number, timer: TimerRe
 export async function setReminder(id: number, chat: number, input: string, update: number | null = null) {
   // Parsing uses the ACTIVE provider (provider-first); the write below is the
   // only source of truth for what actually got saved.
-  const s = await cfg();
+  const userAi = await userCfg(id),
+    s = userAi.config,
+    aiKeys = userAi.keys;
   const tz = await userTimeZone(db, id);
   const now = new Date();
   const local = now.toLocaleString("en-US", {
@@ -50,6 +52,7 @@ export async function setReminder(id: number, chat: number, input: string, updat
   try {
     r = await ai(
       s,
+      aiKeys,
       [
         {
           role: "user",
@@ -126,11 +129,14 @@ export async function setReminder(id: number, chat: number, input: string, updat
 export async function saveTasks(id: number, chat: number, input: string, update: number | null = null) {
   // Extraction runs on the ACTIVE provider; tasks are only appended after a
   // successful database write, and the rendered list is the confirmation.
-  const s = await cfg();
+  const userAi = await userCfg(id),
+    s = userAi.config,
+    aiKeys = userAi.keys;
   let r;
   try {
     r = await ai(
       s,
+      aiKeys,
       [
         {
           role: "user",
