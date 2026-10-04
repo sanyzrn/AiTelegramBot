@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchReminders, dispatchWatchers, dispatchWeekly, dispatchBriefings, runTick } from '../supabase/functions/_shared/dispatch.ts';
+import { dispatchReminders, dispatchWatchers, dispatchWeekly, dispatchBriefings, morningVoiceConfig, runTick } from '../supabase/functions/_shared/dispatch.ts';
 import { runSweep, shouldSweep } from '../supabase/functions/_shared/sweep.ts';
 import { fakeDb } from './helpers/fake-db.mjs';
 
@@ -23,6 +23,29 @@ const deps = (db, extra = {}) => {
 };
 
 const past = () => new Date(Date.now() - 60000).toISOString();
+
+test('morning briefing BYOK uses only the current user key and never bot-owned fallback keys', async () => {
+  const db = fakeDb({
+    telegram_bot_config: [
+      { setting_key: 'provider', setting_value: 'gemini' },
+      { setting_key: 'model', setting_value: 'gemini-global' },
+      { setting_key: 'openrouter_model', setting_value: 'openrouter-global' },
+    ],
+  }, {
+    rpc: {
+      nexa_user_api_get: ({ p_user_id }) => p_user_id === 5
+        ? { data: [{ provider: 'openrouter', api_key: 'personal-or-key' }], error: null }
+        : { data: [], error: null },
+    },
+  });
+  const cfg = await morningVoiceConfig(
+    { db, keys: { gemini: 'bot-gemini-key', openrouter: 'bot-openrouter-key' } },
+    5,
+  );
+  assert.equal(cfg.prefer, 'openrouter');
+  assert.equal(cfg.openrouterKey, 'personal-or-key');
+  assert.equal(cfg.geminiKey, undefined, 'personal OpenRouter must not fall back to the bot Gemini key');
+});
 
 test('a delivered reminder is never reset to pending when the acknowledgement fails (B6)', async () => {
   const db = fakeDb({ saeed_ai_reminders: [{ id: 1, telegram_user_id: 5, telegram_chat_id: 5, note: 'دارو', remind_at: past(), repeat_rule: 'none', repeat_every_hours: null, repeat_anchor_day: null, sent: false, canceled: false, status: 'pending', attempt_count: 0 }] }, { rpc: claimRpc });
