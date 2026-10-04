@@ -276,7 +276,7 @@ test('the reminders dispatcher gates briefing voice-out on the active provider',
   const dispatch = read('supabase/functions/_shared/dispatch.ts');
   assert.match(dispatch, /voiceCfg\.prefer !== "openrouter"/, 'no hidden Gemini TTS while OpenRouter is active');
   const reminders = read('supabase/functions/saeed-ai-reminders/index.ts');
-  assert.match(reminders, /voiceCfg\.prefer === "openrouter"\) return/, 'the speak dependency checks the provider before synthesizing');
+  assert.match(reminders, /voiceCfg\.prefer === "openrouter" \|\| !geminiKey\) return/, 'the speak dependency checks the per-user provider and key before synthesizing');
 });
 
 test('tool intents reachable from both entrypoints use each user\'s provider and key', () => {
