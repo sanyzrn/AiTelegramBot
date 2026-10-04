@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-ui conversation module: fast-path chat and online search in the gateway. */
+/** Nexa saeed-ai-ui conversation module: fast-path chat and online search in the gateway. */
 import { forward, send, tg } from "./transport.ts";
 import { admin, db } from "./state.ts";
 import { readHistory, userConfig } from "./config.ts";
