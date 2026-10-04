@@ -227,6 +227,7 @@ test('the Gemini API URL appears only in the provider transports that legitimate
     'supabase/functions/_shared/tts.ts',          // dedicated Gemini TTS engine
     'supabase/functions/_shared/morning-voice.ts',// gemini branch of the briefing voice
     'supabase/functions/_shared/intent-model.ts', // gemini branch of the classifier
+    'supabase/functions/_shared/user-ai.ts',      // explicit personal-key validation only
     'supabase/functions/saeed-ai-v7/core/admin.ts', // testModel: admin explicitly tests the Gemini endpoint
   ]);
   const offenders = [];
