@@ -20,8 +20,8 @@ export type DispatchDeps = {
   send: (chat: number, text: string, reminderId?: number) => Promise<void>;
   /** HTML message (used for the riddle spoiler). */
   sendHtml: (chat: number, html: string) => Promise<void>;
-  /** Optional voice-out for the briefing intro. */
-  speak?: (chat: number, text: string) => Promise<void>;
+  /** Optional voice-out for the briefing intro, using the same per-user AI credentials. */
+  speak?: (chat: number, text: string, voiceCfg?: VoiceConfig) => Promise<void>;
   fetcher?: Fetcher;
   now?: () => Date;
   keys?: { gemini?: string; openrouter?: string };
@@ -107,18 +107,43 @@ export async function dispatchReminders(deps: DispatchDeps, cache: Cache = tickC
   return { claimed: (data || []).length, sent, failed };
 }
 
-/** The morning voice follows the same provider/model settings as the chat AI. */
-export async function morningVoiceConfig(deps: Pick<DispatchDeps, "db" | "keys">): Promise<VoiceConfig> {
+/** The morning voice follows the same provider/model settings as the user's chat AI.
+ * A BYOK user gets ONLY their own provider key here: no fallback to bot-owned keys.
+ */
+export async function morningVoiceConfig(
+  deps: Pick<DispatchDeps, "db" | "keys">,
+  userId?: number,
+): Promise<VoiceConfig> {
   try {
     const { data, error } = await deps.db.from("telegram_bot_config").select("setting_key,setting_value");
     if (error || !data) return {};
     const x = new Map<string, string>((data || []).map((v: { setting_key: string; setting_value: string }) => [String(v.setting_key), String(v.setting_value)]));
+    let prefer: "gemini" | "openrouter" = x.get("provider") === "openrouter" ? "openrouter" : "gemini";
+    let geminiKey = deps.keys?.gemini || "";
+    let openrouterKey = deps.keys?.openrouter || "";
+
+    if (userId && Number.isSafeInteger(userId) && userId > 0) {
+      try {
+        const { data: personal, error: personalError } = await deps.db.rpc("nexa_user_api_get", { p_user_id: userId });
+        const row = Array.isArray(personal) ? personal[0] : personal;
+        const provider = row?.provider === "gemini" || row?.provider === "openrouter" ? row.provider : null;
+        const key = typeof row?.api_key === "string" ? row.api_key.trim() : "";
+        if (!personalError && provider && key) {
+          prefer = provider;
+          geminiKey = provider === "gemini" ? key : "";
+          openrouterKey = provider === "openrouter" ? key : "";
+        }
+      } catch {
+        // No personal credential (or an older test DB): use the bot-wide config.
+      }
+    }
+
     return {
-      geminiKey: deps.keys?.gemini || undefined,
-      openrouterKey: deps.keys?.openrouter || undefined,
+      geminiKey: geminiKey || undefined,
+      openrouterKey: openrouterKey || undefined,
       geminiModel: x.get("model") || undefined,
       openrouterModel: x.get("openrouter_model") || undefined,
-      prefer: x.get("provider") === "openrouter" ? "openrouter" : "gemini",
+      prefer,
     };
   } catch {
     return {};
@@ -130,9 +155,9 @@ export async function dispatchBriefings(deps: DispatchDeps, cache: Cache = tickC
   const { data, error } = await db.rpc("saeed_ai_claim_briefings", { p_limit: 6 });
   if (error) throw Error("BRIEF_CLAIM_" + error.code);
   let sent = 0, failed = 0;
-  const voiceCfg = (data || []).length ? await morningVoiceConfig(deps) : {};
   for (const item of data || []) {
     const uid = Number(item.telegram_user_id), chat = Number(item.telegram_chat_id);
+    const voiceCfg = await morningVoiceConfig(deps, uid);
     const now = deps.now?.() || new Date();
     try {
       const { data: p, error: prefError } = await db.from("saeed_ai_briefing_preferences")
@@ -198,7 +223,7 @@ export async function dispatchBriefings(deps: DispatchDeps, cache: Cache = tickC
       // there is no hidden Gemini call — the briefing stays text-only.
       if (p.voice && deps.speak && voiceCfg.prefer !== "openrouter") {
         try {
-          await deps.speak(chat, intro + " " + signoff);
+          await deps.speak(chat, intro + " " + signoff, voiceCfg);
         } catch (e) {
           console.error("BRIEF_VOICE", uid, e instanceof Error ? e.message.slice(0, 60) : "UNKNOWN");
         }
