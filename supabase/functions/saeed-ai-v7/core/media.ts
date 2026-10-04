@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 media module. Source moved without behavioral rewrites. */
+/** Nexa saeed-ai-v7 media module. Source moved without behavioral rewrites. */
 import { unzipSync } from "npm:fflate@0.8.2";
 import { tg } from "./transport.ts";
 import { GH, TOKEN } from "./state.ts";
