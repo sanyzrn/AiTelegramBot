@@ -1,4 +1,4 @@
-name: Saeed AI Shared Module Typecheck
+name: Nexa Shared Module Typecheck
 on:
   push:
     branches: [main]
