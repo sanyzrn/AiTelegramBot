@@ -1,4 +1,4 @@
-name: Saeed AI Regression Tests
+name: Nexa Regression Tests
 on:
   push:
     branches: [main]
