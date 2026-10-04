@@ -1,7 +1,7 @@
 /** Saeed AI saeed-ai-ui conversation module: fast-path chat and online search in the gateway. */
 import { forward, send, tg } from "./transport.ts";
-import { GK, RK, admin, db } from "./state.ts";
-import { config, readHistory } from "./config.ts";
+import { admin, db } from "./state.ts";
+import { readHistory, userConfig } from "./config.ts";
 import { groundedSearch, searchMessage } from "./search.ts";
 import { deliver, stripRepeatedIntro } from "./output.ts";
 import type { TgMessage } from "../../_shared/telegram.ts";
@@ -51,7 +51,7 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
     if (resetError) throw Error("WEB_RESET");
     pref.pending_tool = "chat";
   }
-  const s = await config(),
+  const { config: s, keys } = await userConfig(id),
     { data: row, error } = await db
       .from("telegram_chat_messages")
       .insert({
@@ -118,6 +118,7 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
             query,
           system,
           s,
+          keys,
         );
       answer = r.text;
       usage = r.usage;
@@ -126,7 +127,7 @@ export async function reply(m: TgMessage, update: number, forcedTool: "web" | nu
     } else {
       // google_search (admin-switchable, Gemini-only) grounds live answers;
       // when it actually grounds the answer the source links are appended.
-      const r = await generate(s, { gemini: GK, openrouter: RK }, appendUserTurn(history, [{ text: query }]), system, {
+      const r = await generate(s, keys, appendUserTurn(history, [{ text: query }]), system, {
         search: s.provider === "gemini" && s.chatSearch,
       });
       answer = r.text;
