@@ -23,5 +23,17 @@ export async function isAllowed(
     .select("enabled")
     .eq("telegram_user_id", id)
     .maybeSingle();
-  return !error && (data ? data.enabled === true : env.legacy.includes(String(id)));
+  if (error) return false;
+  // An explicit disabled row is a hard block, even when a personal API key exists.
+  if (data) return data.enabled === true;
+  if (env.legacy.includes(String(id))) return true;
+
+  // Users outside the allowlist may bring their own API key. The secret itself
+  // stays in Vault; this table only exposes whether a usable credential exists.
+  const { data: personal, error: personalError } = await db
+    .from("telegram_bot_user_api")
+    .select("enabled")
+    .eq("telegram_user_id", id)
+    .maybeSingle();
+  return !personalError && personal?.enabled === true;
 }
