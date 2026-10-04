@@ -1,7 +1,7 @@
 /** Telegram menus, preferences and guarded navigation. */
 import { WEBAPP_URL, admin, db, tg } from "./state.ts";
 import { GK, RK } from "./state.ts";
-import { cfg, configSet, exportMd, flow, save, stats, testModel, type Pref } from "./admin.ts";
+import { cfg, configSet, exportMd, flow, save, stats, testModel, userCfg, type Pref } from "./admin.ts";
 import { send } from "./transport.ts";
 import { listTasks, profile } from "./life.ts";
 import { handleLifeMessage } from "../../_shared/life.ts";
@@ -30,7 +30,7 @@ export async function show(id: number, chat: number, page: string) {
   if (ADMIN_PAGES.includes(page) && !admin(id))
     return;
   const p = await save(id, { keyboard_page: page }),
-    s = await cfg();
+    s = ADMIN_PAGES.includes(page) && admin(id) ? await cfg() : (await userCfg(id)).config;
   let body =
     {
       home: "بفرما حاجی، چی تو ذهنته؟ 😁\nهر چی می‌خوای همین‌جا بنویس، عکس یا ویس بفرست؛ خودم می‌فهمم باید چی کار کنم.",
@@ -47,7 +47,7 @@ export async function show(id: number, chat: number, page: string) {
       tasks: "✅ مدیر تسک‌ها\nکارهاتو بنویس تا به لیستت اضافه کنم؛ مثلاً «خرید نون و زنگ به مامان».",
       tasks_delete_confirm: "⚠️ تمام تسک‌های تو، حتی تسک‌های انجام‌شده، برای همیشه پاک می‌شن. مطمئنی؟ برای حذف، دکمه تأیید رو بزن؛ برای حفظ تسک‌ها انصراف بده.",
       reset: "⚠️ مطمئنی می‌خوای تاریخچه‌ی گفت‌وگومون پاک بشه؟ حافظه‌ها، تسک‌ها و خرج‌هات دست نمی‌خورن.",
-      admin: `🛡 پنل مدیریت Saeed AI 👑\n🔎 جست‌وجوی گوگل در چت عادی: ${s.chatSearch && s.provider === "gemini" ? "روشن" : "خاموش (فقط با Gemini فعال)"}`,
+      admin: `🛡 پنل مدیریت Nexa 👑\n🔎 جست‌وجوی گوگل در چت عادی: ${s.chatSearch && s.provider === "gemini" ? "روشن" : "خاموش (فقط با Gemini فعال)"}`,
       users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
       models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}`,
       quota: `📊 سقف پیش‌فرض روزانه: ${s.daily === 0 ? "نامحدود" : s.daily + " پیام"}`,

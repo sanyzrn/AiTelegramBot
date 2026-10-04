@@ -1,4 +1,4 @@
-# Saeed AI · Telegram bot
+# Nexa · Telegram bot
 
 ## v10.4.0 final polish: guide page, sharper answers, redesigned dashboard
 

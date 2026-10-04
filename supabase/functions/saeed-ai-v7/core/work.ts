@@ -12,13 +12,13 @@ import { groundedSearch } from "../../_shared/web-search.ts";
 import { appendUserTurn, readHistory } from "../../_shared/history.ts";
 import { systemPrompt } from "../../_shared/tone.ts";
 import { loadMemories } from "../../_shared/life-memories.ts";
-import { parseJsonObject } from "../../_shared/ai.ts";
+import { parseJsonObject, type AiKeys } from "../../_shared/ai.ts";
 import { failMessage as aiFailMessage, type AiErrorContext } from "../../_shared/ai-errors.ts";
 import { resolveCapabilities, modalityErrorCode, type Modality } from "../../_shared/capabilities.ts";
 import { parseReceiptJson, proposeReceipt, RECEIPT_PROMPT } from "../../_shared/receipt.ts";
 import { sendVoice, synthesize } from "../../_shared/tts.ts";
-import { GK, RK, TOKEN, TTS_MODEL, admin, db } from "./state.ts";
-import { cfg, documentSend, pref, save, type Pref } from "./admin.ts";
+import { TOKEN, TTS_MODEL, admin, db } from "./state.ts";
+import { documentSend, pref, save, userCfg, type Pref } from "./admin.ts";
 import type { BotConfig } from "../../_shared/bot-config.ts";
 import type { TgMessage } from "../../_shared/telegram.ts";
 import { base64, doc, file, media, parseDoc, repo, type Doc, type Media } from "./media.ts";
@@ -109,7 +109,9 @@ export async function startWork(m: TgMessage, update: number, tool: string, prom
   const id = m.from.id,
     chat = m.chat.id,
     original = update,
-    s = await cfg(),
+    userAi = await userCfg(id),
+    s = userAi.config,
+    aiKeys = userAi.keys,
     p = await pref(id),
     kind = m.voice || m.audio ? "voice" : m.photo ? "photo" : "text",
     med = override || media(m),
@@ -186,7 +188,7 @@ export async function startWork(m: TgMessage, update: number, tool: string, prom
   );
   await metric(update, id, s, "running");
   EdgeRuntime.waitUntil(
-    work(m, row.id, p, s, tool, prompt, med, document, original, update),
+    work(m, row.id, p, s, aiKeys, tool, prompt, med, document, original, update),
   );
 }
 
@@ -203,6 +205,7 @@ async function work(
   row: number,
   p: Pref,
   s: BotConfig,
+  aiKeys: AiKeys,
   tool: string,
   prompt: string,
   med: Media | null,
@@ -304,7 +307,10 @@ async function work(
         await completeRetry(original, id);
         return;
       }
-      const r = await ai(s, [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.");
+      const r = await ai(
+        s,
+        aiKeys,
+        [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.");
       await metric(update, id, s, "success", r.usage);
       await completeRetry(original, id);
       const draft = parseReceiptJson(parseJsonObject(r.text));
@@ -316,7 +322,10 @@ async function work(
     // A photo with no caption: if it is a receipt/invoice/order summary, offer to
     // record it as an expense (still confirmed by the user); otherwise analyse it.
     if (tool === "image" && med?.type === "image" && !prompt) {
-      const probe = await ai(s, [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.", { maxTokens: 512 });
+      const probe = await ai(
+        s,
+        aiKeys,
+        [{ role: "user", parts: [{ text: RECEIPT_PROMPT }, parts[1]] }], "Output only minified JSON, no prose.", { maxTokens: 512 });
       const j = parseJsonObject(probe.text);
       if (j?.is_receipt === true) {
         const draft = parseReceiptJson(j);
@@ -334,6 +343,7 @@ async function work(
       // models with audio input read input_audio parts.
       const speech = await ai(
         s,
+        aiKeys,
         [{ role: "user", parts: [
           { text: "Transcribe the Persian speech verbatim. Preserve quantities, numbers, time units and commands. Output ONLY the speech text. Never answer or execute it." },
           parts[1],
@@ -356,7 +366,7 @@ async function work(
       else if (await handleLifeMessage({ db, tg, send }, id, chat, spoken, update)) {
         // Spoken life commands («به لیست خرید اضافه کن…», «یادت باشه…») run for real.
       } else {
-        const intent = await selectToolIntent(spoken, s, { gemini: GK, openrouter: RK });
+        const intent = await selectToolIntent(spoken, s, aiKeys);
         if (intent === "chat" && !isSpokenRequest(spoken)) {
           await send(chat, "🎙 حاجی، توی این ویس درخواست مشخصی پیدا نکردم. دوست داری تایپش کنم، خلاصه‌اش کنم یا ترجمه‌اش کنم؟ 😁", "voice", id);
           await metric(update, id, s, "success", speech.usage);
@@ -413,8 +423,11 @@ async function work(
     // grounds with google_search, OpenRouter uses its web plugin. Regular
     // Gemini chat can also ground live answers (admin-switchable).
     const result = tool === "web"
-      ? await groundedSearch(input, system, s, { gemini: GK, openrouter: RK })
-      : await ai(s, appendUserTurn(history, parts), system, {
+      ? await groundedSearch(input, system, s, aiKeys)
+      : await ai(
+        s,
+        aiKeys,
+        appendUserTurn(history, parts), system, {
           search: tool === "chat" && !med && !document && s.chatSearch && s.provider === "gemini",
         });
     if (tool === "execute" && med?.type === "audio" &&
@@ -531,8 +544,10 @@ export async function speak(id: number, chat: number, update: number, repliedTex
   // Voice-out is a dedicated Gemini TTS engine: it stays available only while
   // Gemini is the ACTIVE provider. With OpenRouter active there is no hidden
   // Gemini call — the user gets a precise explanation instead.
-  const s = await cfg();
-  if (s.provider !== "gemini" || !GK) {
+  const userAi = await userCfg(id),
+    s = userAi.config,
+    geminiKey = userAi.keys.gemini || "";
+  if (s.provider !== "gemini" || !geminiKey) {
     return send(chat, failMessage("TTS_PROVIDER", s));
   }
   if (!(await charge(id, chat, update))) return;
@@ -540,7 +555,7 @@ export async function speak(id: number, chat: number, update: number, repliedTex
     try {
       await tg("sendChatAction", { chat_id: chat, action: "record_voice" });
     } catch {}
-    const { mp3, seconds } = await synthesize(text, GK, { model: TTS_MODEL || undefined });
+    const { mp3, seconds } = await synthesize(text, geminiKey, { model: TTS_MODEL || undefined });
     await sendVoice(TOKEN, chat, mp3, seconds);
   } catch (e) {
     const reason = e instanceof Error ? e.message : "TTS";

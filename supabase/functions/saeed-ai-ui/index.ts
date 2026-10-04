@@ -2,13 +2,14 @@
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { forwardsPendingTool, mustForward } from "../_shared/gateway-route.ts";
-import { BASE, GK, RK, RATE_LIMIT, WEBAPP_URL, admin, db, out, ready } from "./core/state.ts";
+import { ACCESS, BASE, RATE_LIMIT, WEBAPP_URL, admin, db, out, ready } from "./core/state.ts";
 import { esc, stripRepeatedIntro } from "./core/output.ts";
-import { MENUS, config, readHistory } from "./core/config.ts";
+import { MENUS, readHistory, userConfig } from "./core/config.ts";
 import { reply } from "./core/conversation.ts";
 import { groundedSearch, searchMessage } from "./core/search.ts";
 import { allowed, equal, forward, hook, send, tg, withinRate } from "./core/transport.ts";
 import type { TgUpdate } from "../_shared/telegram.ts";
+import { validatePersonalApiKey } from "../_shared/user-ai.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 /**
@@ -28,6 +29,172 @@ async function syncMenuButton() {
     menuSynced = false;
     console.error("MENU_BUTTON", String(e).slice(0, 80));
   }
+}
+
+let nameSynced = false;
+
+/** Telegram's top bar is bot-profile data, not Mini App HTML. Keep it branded too. */
+async function syncBotName() {
+  if (nameSynced) return;
+  nameSynced = true;
+  try {
+    await tg("setMyName", { name: "Nexa" });
+  } catch (e) {
+    nameSynced = false;
+    console.error("BOT_NAME", String(e).slice(0, 80));
+  }
+}
+
+const accessButtons = () => ({
+  inline_keyboard: [
+    [{ text: "📨 ارسال Chat ID برای مدیر", callback_data: "nexa:access:request" }],
+    [{ text: "🔑 از API شخصی خودم استفاده می‌کنم", callback_data: "nexa:byok:start" }],
+  ],
+});
+
+async function sendAccessMenu(userId: number) {
+  await tg("sendMessage", {
+    chat_id: userId,
+    text:
+      "👋 هنوز به Nexa اضافه نشدی.\n\n" +
+      "🆔 Chat ID شما: " + userId + "\n\n" +
+      "دو راه داری:\n" +
+      "1) شناسه‌ات رو برای مدیر بفرستی و درخواست اضافه‌شدن بدی.\n" +
+      "2) با API Key شخصی خودت از Nexa استفاده کنی.",
+    reply_markup: accessButtons(),
+  });
+}
+
+async function requestAccess(
+  user: { id: number; first_name?: string; last_name?: string; username?: string },
+) {
+  const name = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || "بدون نام";
+  const username = user.username ? "@" + user.username : "—";
+  await tg("sendMessage", {
+    chat_id: Number(ACCESS.adminId),
+    text:
+      "📨 درخواست دسترسی Nexa\n" +
+      "👤 " + name + "\n" +
+      "🔗 " + username + "\n" +
+      "🆔 Chat ID: " + user.id,
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "✅ افزودن این کاربر", callback_data: "nexa:approve:" + user.id },
+      ]],
+    },
+  });
+  await tg("sendMessage", {
+    chat_id: user.id,
+    text: "✅ درخواستت برای مدیر ارسال شد. بعد از تأیید، همین‌جا بهت خبر می‌دم.",
+  });
+}
+
+async function startByok(userId: number) {
+  await tg("sendMessage", {
+    chat_id: userId,
+    text: "🔑 سرویس API شخصی‌ات رو انتخاب کن:",
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "🔵 OpenRouter", callback_data: "nexa:byok:openrouter" },
+        { text: "🟢 Gemini", callback_data: "nexa:byok:gemini" },
+      ]],
+    },
+  });
+}
+
+async function chooseByokProvider(userId: number, provider: "gemini" | "openrouter") {
+  const { error } = await db.from("telegram_bot_onboarding").upsert({
+    telegram_user_id: userId,
+    pending_action: "api_key",
+    provider,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "telegram_user_id" });
+  if (error) throw Error("ONBOARD_SAVE");
+  await tg("sendMessage", {
+    chat_id: userId,
+    text:
+      "🔐 حالا API Key " + (provider === "openrouter" ? "OpenRouter" : "Gemini") + " رو بفرست.\n\n" +
+      "کلید فقط برای حساب خودت استفاده می‌شه و داخل Supabase Vault رمزگذاری می‌شه. " +
+      "بعد از دریافت هم سعی می‌کنم پیام حاوی کلید رو پاک کنم. بهتره یک کلید جدا و محدود برای Nexa بسازی.\n\n" +
+      "⏱ این مرحله ۱۰ دقیقه اعتبار داره.",
+  });
+}
+
+async function handleUnauthorized(update: TgUpdate, user: NonNullable<TgUpdate["message"]>["from"], chat: { id: number; type?: string }) {
+  if (chat.type !== "private" || chat.id !== user.id) return;
+
+  const { data: accessRow } = await db.from("telegram_bot_user_access")
+    .select("enabled").eq("telegram_user_id", user.id).maybeSingle();
+  if (accessRow?.enabled === false) {
+    await tg("sendMessage", { chat_id: user.id, text: "🚫 دسترسی این حساب توسط مدیر غیرفعال شده." });
+    return;
+  }
+
+  const callback = update.callback_query;
+  if (callback) {
+    try { await tg("answerCallbackQuery", { callback_query_id: callback.id }); } catch {}
+    const action = callback.data || "";
+    if (action === "nexa:access:request") return requestAccess(user);
+    if (action === "nexa:byok:start") return startByok(user.id);
+    if (action === "nexa:byok:openrouter") return chooseByokProvider(user.id, "openrouter");
+    if (action === "nexa:byok:gemini") return chooseByokProvider(user.id, "gemini");
+    return sendAccessMenu(user.id);
+  }
+
+  const message = update.message;
+  if (message?.text) {
+    const { data: flow } = await db.from("telegram_bot_onboarding")
+      .select("pending_action,provider,expires_at")
+      .eq("telegram_user_id", user.id)
+      .maybeSingle();
+    if (flow?.pending_action === "api_key" && Date.parse(flow.expires_at) > Date.now() &&
+        (flow.provider === "gemini" || flow.provider === "openrouter")) {
+      const key = message.text.trim();
+      try {
+        if (message.message_id)
+          await tg("deleteMessage", { chat_id: user.id, message_id: message.message_id });
+      } catch {}
+      if (!(await validatePersonalApiKey(flow.provider, key))) {
+        await tg("sendMessage", {
+          chat_id: user.id,
+          text: "❌ این API Key اعتبارسنجی نشد. کلید درست رو دوباره بفرست یا /start رو بزن و مسیر دیگه‌ای انتخاب کن.",
+        });
+        return;
+      }
+      const { data: saved, error } = await db.rpc("nexa_user_api_set", {
+        p_user_id: user.id,
+        p_provider: flow.provider,
+        p_api_key: key,
+      });
+      if (error || saved !== true) throw Error("USER_API_SAVE");
+      await tg("sendMessage", {
+        chat_id: user.id,
+        text:
+          "✅ API Key شخصی‌ات امن ذخیره شد و از این به بعد درخواست‌های AI خودت با همون کلید اجرا می‌شن.\n" +
+          "برای شروع /start رو بزن. 🚀",
+      });
+      return;
+    }
+  }
+  await sendAccessMenu(user.id);
+}
+
+async function approveAccess(targetId: number, adminId: number) {
+  const { error } = await db.from("telegram_bot_user_access").upsert({
+    telegram_user_id: targetId,
+    enabled: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "telegram_user_id" });
+  if (error) throw Error("ACCESS_APPROVE");
+  await tg("sendMessage", {
+    chat_id: targetId,
+    text: "✅ مدیر دسترسی شما به Nexa رو تأیید کرد. /start رو بزن و شروع کن. 🚀",
+  });
+  await tg("sendMessage", {
+    chat_id: adminId,
+    text: "✅ کاربر " + targetId + " به Nexa اضافه شد.",
+  });
 }
 
 Deno.serve(async (req) => {
@@ -62,7 +229,7 @@ Deno.serve(async (req) => {
     const rx = /```([A-Za-z0-9_+#-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```/g,
       m = "مقدمه.\n```python\nprint(1)\n```\nپایان.".match(rx),
       t = stripRepeatedIntro(
-        "سلام دوباره! من سعید AI هستم. پاسخ اصلی اینجاست.",
+        "سلام دوباره! من نکسا هستم. پاسخ اصلی اینجاست.",
         false,
       );
     return out({
@@ -104,7 +271,8 @@ Deno.serve(async (req) => {
       // The Mini App dashboard is reachable from the chat menu button when configured.
       if (WEBAPP_URL)
         await tg("setChatMenuButton", { menu_button: menuButton() });
-      return out({ ok: true, webhook_registered: true, dashboard_menu: !!WEBAPP_URL });
+      await tg("setMyName", { name: "Nexa" });
+      return out({ ok: true, webhook_registered: true, dashboard_menu: !!WEBAPP_URL, bot_name: "Nexa" });
     } catch (e) {
       console.error("SETUP", String(e));
       return out({ ok: false }, 502);
@@ -126,8 +294,13 @@ Deno.serve(async (req) => {
     m = update.message,
     user = c?.from || m?.from,
     chat = c?.message?.chat || m?.chat;
-  if (!user?.id || !(await allowed(user.id, chat)))
-    return out({ ok: true, ignored: true });
+  if (!user?.id || !chat?.id) return out({ ok: true, ignored: true });
+
+  if (!(await allowed(user.id, chat))) {
+    EdgeRuntime.waitUntil(handleUnauthorized(update, user, chat));
+    return out({ ok: true, onboarding: true });
+  }
+
   // Acknowledge Telegram's callback immediately, before the slower internal forward.
   if (c) {
     try {
@@ -136,8 +309,15 @@ Deno.serve(async (req) => {
       console.error("CALLBACK_ACK", String(e).slice(0, 80));
     }
   }
+
+  if (c && admin(user.id) && /^nexa:approve:\\d+$/.test(c.data || "")) {
+    const target = Number((c.data || "").split(":").at(-1));
+    if (Number.isSafeInteger(target) && target > 0)
+      EdgeRuntime.waitUntil(approveAccess(target, user.id));
+    return out({ ok: true, approved: target });
+  }
   // The one-time menu-button sync runs beside the update, never in front of it.
-  EdgeRuntime.waitUntil(syncMenuButton());
+  EdgeRuntime.waitUntil(Promise.all([syncMenuButton(), syncBotName()]));
   EdgeRuntime.waitUntil(
     (async () => {
       try {
@@ -164,8 +344,9 @@ Deno.serve(async (req) => {
         // tools keyboard promises an action the gateway silently downgrades to chat.
         if (forwardsPendingTool(p?.pending_tool)) return forward(update);
         // The menu is a shortcut, not a prerequisite for using a tool.
+        const userAi = await userConfig(user.id);
         const inferred = (p?.pending_tool === "chat" || !p?.pending_tool)
-          ? await selectToolIntent(text, await config(), { gemini: GK, openrouter: RK })
+          ? await selectToolIntent(text, userAi.config, userAi.keys)
           : "chat";
         if (inferred === "web") return reply(m, update.update_id, "web");
         if (inferred !== "chat")

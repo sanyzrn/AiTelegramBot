@@ -7,8 +7,8 @@ import { ASKS_FOR_RECEIPT, mediaTool } from "../_shared/media-intent.ts";
 import { calculateExact } from "../_shared/calculator.ts";
 import { parseTimerRequest, normalizeTimerDigits } from "../_shared/timer.ts";
 import { equal, hook, send, tg } from "./core/transport.ts";
-import { GK, RK, WEBAPP_URL, admin, db, ready, reply } from "./core/state.ts";
-import { adminInput, allowed, cfg, exportAll, exportMd, pref, save, stats } from "./core/admin.ts";
+import { WEBAPP_URL, admin, db, ready, reply } from "./core/state.ts";
+import { adminInput, allowed, exportAll, exportMd, pref, save, stats, userCfg } from "./core/admin.ts";
 import { charge, retry, speak, startWork } from "./core/work.ts";
 import { chooseVoice, handleVoiceReply, voiceAction } from "./core/voice.ts";
 import { MENU, TOOLS, keyboard, navigate, rows, show } from "./core/ui.ts";
@@ -212,7 +212,10 @@ async function message(original: TgMessage, update: number) {
   const inferred: string = (p.pending_tool === "chat" || ["documents", "image", "ocr", "receipt"].includes(p.pending_tool)) && requestText
     ? m.saeed_auto_tool && safeTools.has(m.saeed_auto_tool)
       ? m.saeed_auto_tool
-      : await selectToolIntent(requestText, await cfg(), { gemini: GK, openrouter: RK })
+      : await (async () => {
+          const userAi = await userCfg(id);
+          return selectToolIntent(requestText, userAi.config, userAi.keys);
+        })()
     : "chat";
   if (inferred === "remind") {
     const timer = parseTimerRequest(requestText);

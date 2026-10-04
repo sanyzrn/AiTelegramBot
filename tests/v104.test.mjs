@@ -62,7 +62,7 @@ test('processor: calc intent computes instead of refusing; failure is one messag
 
 test('gateway: menu-button sync never blocks the first reply', () => {
   const g = src('saeed-ai-ui/index.ts');
-  assert.match(g, /EdgeRuntime\.waitUntil\(syncMenuButton\(\)\)/);
+  assert.match(g, /EdgeRuntime\.waitUntil\(Promise\.all\(\[syncMenuButton\(\), syncBotName\(\)\]\)\)/);
   assert.doesNotMatch(g, /await syncMenuButton\(\)/);
 });
 

@@ -13,7 +13,7 @@ export function stripRepeatedIntro(text: string, asked: boolean) {
   return (
     String(text)
       .replace(
-        /^\s*(?:(?:سلام(?: دوباره)?|درود)[!،,.\s]*)?من\s+(?:سعید\s*(?:AI|ای‌آی)|Saeed\s*AI)\s+هستم[!،,.:\s]*/iu,
+        /^\s*(?:(?:سلام(?: دوباره)?|درود)[!،,.\s]*)?من\s+(?:نکسا|Nexa|سعید\s*(?:AI|ای‌آی)|Saeed\s*AI)\s+هستم[!،,.:\s]*/iu,
         "",
       )
       .trim() || text
