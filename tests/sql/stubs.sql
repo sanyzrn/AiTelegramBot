@@ -19,5 +19,7 @@ CREATE OR REPLACE FUNCTION cron.schedule(p_name TEXT, p_schedule TEXT, p_command
 CREATE SCHEMA IF NOT EXISTS vault;
 CREATE TABLE IF NOT EXISTS vault.secrets (id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE, secret TEXT NOT NULL);
 CREATE OR REPLACE VIEW vault.decrypted_secrets AS SELECT id, name, secret AS decrypted_secret FROM vault.secrets;
-CREATE OR REPLACE FUNCTION vault.create_secret(p_secret TEXT, p_name TEXT) RETURNS BIGINT LANGUAGE sql AS $$
-  INSERT INTO vault.secrets (name, secret) VALUES (p_name, p_secret) RETURNING id $$;
+CREATE OR REPLACE FUNCTION vault.create_secret(p_secret TEXT, p_name TEXT) RETURNS BIGINT LANGUAGE sql AS $
+  INSERT INTO vault.secrets (name, secret) VALUES (p_name, p_secret) RETURNING id $;
+CREATE OR REPLACE FUNCTION vault.update_secret(p_id BIGINT, p_secret TEXT) RETURNS VOID LANGUAGE sql AS $
+  UPDATE vault.secrets SET secret = p_secret WHERE id = p_id $;
