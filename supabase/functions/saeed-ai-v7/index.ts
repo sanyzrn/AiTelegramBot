@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 index module: authenticated processor entrypoint and routing. */
+/** Nexa saeed-ai-v7 index module: authenticated processor entrypoint and routing. */
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { handleLifeMessage, handleLifeCallback, recordExpenses, setPendingExpenses } from "../_shared/life.ts";
