@@ -3,6 +3,7 @@ import { ACCESS, ADMIN, GK, RK, TOKEN, admin, db } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
 import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
 import { clearCapabilityCache } from "../../_shared/capabilities.ts";
+import { userAiContext } from "../../_shared/user-ai.ts";
 import { send } from "./transport.ts";
 
 export type Pref = { telegram_user_id: number; tone: string; answer_length: string; language: string; pending_tool: string; keyboard_page: string };
@@ -59,6 +60,10 @@ export async function save(id: number, patch: Partial<Pref>): Promise<Pref> {
  *  exists yet (fresh install), the provider whose key is configured wins. */
 export function cfg() {
   return readBotConfig(db, Date.now(), { preferProvider: GK ? "gemini" : "openrouter" });
+}
+
+export async function userCfg(id: number) {
+  return userAiContext(db, id, await cfg(), { gemini: GK, openrouter: RK });
 }
 
 export async function configSet(key: string, val: string | number) {
