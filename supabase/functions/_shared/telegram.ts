@@ -126,7 +126,7 @@ export type TgMessage = {
   message_id?: number;
   text?: string;
   caption?: string;
-  from: { id: number; is_bot?: boolean; first_name?: string; last_name?: string };
+  from: { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string };
   chat: { id: number; type?: string };
   reply_to_message?: {
     message_id?: number; text?: string; caption?: string; voice?: TgFile | null; audio?: TgFile | null;
