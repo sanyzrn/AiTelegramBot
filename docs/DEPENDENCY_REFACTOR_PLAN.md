@@ -1,6 +1,6 @@
 # Dependency cleanup: completed 2026-09-21
 
-Goal: preserve Saeed AI behavior while removing copied legacy imports and cross-module cycles.
+Goal: preserve Nexa behavior while removing copied legacy imports and cross-module cycles.
 
 ## Resolved cycles
 
