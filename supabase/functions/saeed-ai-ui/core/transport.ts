@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-ui transport module: webhook secret, Telegram output and processor forwarding. */
+/** Nexa saeed-ai-ui transport module: webhook secret, Telegram output and processor forwarding. */
 import { ACCESS, BASE, TOKEN, db, tg } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
 import { safeEqual, sendPlain, webhookSecret, type TgUpdate } from "../../_shared/telegram.ts";
