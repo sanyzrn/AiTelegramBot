@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { APP_VERSION } from "../_shared/version.ts";
-import { morningVoiceConfig, runTick } from "../_shared/dispatch.ts";
+import { runTick } from "../_shared/dispatch.ts";
+import type { VoiceConfig } from "../_shared/morning-voice.ts";
 import { createTg, sendPlain } from "../_shared/telegram.ts";
 import { sendVoice, synthesize } from "../_shared/tts.ts";
 const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
@@ -27,15 +28,14 @@ const deps = () => ({
   db,
   send,
   sendHtml: async (chat: number, html: string) => { await tg("sendMessage", { chat_id: chat, text: html, parse_mode: "HTML" }); },
-  // The briefing voice is short (intro + sign-off) so encoding stays within the
-  // CPU budget. Voice-out is the Gemini TTS engine: it is offered only while
-  // Gemini is the ACTIVE provider (no hidden Gemini call under OpenRouter).
-  speak: GKEY ? async (chat: number, text: string) => {
-    const voiceCfg = await morningVoiceConfig({ db, keys: { gemini: GKEY, openrouter: RKEY } }).catch(() => ({}) as Awaited<ReturnType<typeof morningVoiceConfig>>);
-    if (voiceCfg.prefer === "openrouter") return;
-    const { mp3, seconds } = await synthesize(text, GKEY, { model: TTS_MODEL, style: "Say cheerfully, like an energetic friend waking someone up, in Persian", timeoutMs: 20000 });
+  // Voice-out is Gemini-only. For BYOK users, dispatch passes that user's
+  // personal Gemini key; OpenRouter users stay text-only with no hidden fallback.
+  speak: async (chat: number, text: string, voiceCfg: VoiceConfig = {}) => {
+    const geminiKey = voiceCfg.geminiKey || "";
+    if (voiceCfg.prefer === "openrouter" || !geminiKey) return;
+    const { mp3, seconds } = await synthesize(text, geminiKey, { model: TTS_MODEL, style: "Say cheerfully, like an energetic friend waking someone up, in Persian", timeoutMs: 20000 });
     await sendVoice(TOKEN, chat, mp3, seconds);
-  } : undefined,
+  },
   keys: { gemini: GKEY, openrouter: RKEY },
 });
 
