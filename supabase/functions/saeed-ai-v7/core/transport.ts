@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 transport module: Telegram output helpers bound to this bot. */
+/** Nexa saeed-ai-v7 transport module: Telegram output helpers bound to this bot. */
 import { TOKEN, WEBAPP_URL, admin, esc, tg } from "./state.ts";
 import { keyboard } from "./menu.ts";
 import { safeEqual, sendPlain, sendRich, webhookSecret } from "../../_shared/telegram.ts";
