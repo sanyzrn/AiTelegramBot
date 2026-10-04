@@ -1,4 +1,4 @@
-/** Reminders, timers, task persistence and profile for Saeed AI.
+/** Reminders, timers, task persistence and profile for Nexa.
  *  Reminder/task PARSING runs on the active provider; the database write and
  *  the user-facing confirmation only happen after the actual DB write. */
 import { handleLifeMessage, renderTasks } from "../../_shared/life.ts";
