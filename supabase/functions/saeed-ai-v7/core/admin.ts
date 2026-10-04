@@ -274,7 +274,7 @@ export async function exportAll(id: number, chat: number) {
   if (!data?.length)
     return send(chat, "گفت‌وگوی ذخیره‌شده‌ای نیست؛ پیام‌ها بعد از ۱۵ دقیقه برای حریم خصوصی پاک می‌شن. 😅");
   const body =
-    "# گفت‌وگو با Saeed AI\n\n" +
+    "# گفت‌وگو با Nexa\n\n" +
     data
       .map((x) => `## ${x.role === "model" ? "🤖 Saeed AI" : "👤 من"} — ${new Date(x.created_at).toLocaleString("fa-IR", { timeZone: "Asia/Tehran" })}\n\n${x.body}`)
       .join("\n\n---\n\n");
