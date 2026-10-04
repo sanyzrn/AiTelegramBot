@@ -10,7 +10,7 @@ export type UserAiContext = {
 };
 
 type RpcDb = {
-  rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error?: { code?: string } | null }>;
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error?: { code?: string } | null }>;
 };
 
 export async function userAiContext(
