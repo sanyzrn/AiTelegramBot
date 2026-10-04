@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-ui state module: environment, database and Telegram client. */
+/** Nexa saeed-ai-ui state module: environment, database and Telegram client. */
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.57.0";
 import { isAdmin, readAccessEnv } from "../../_shared/access.ts";
 import { createTg } from "../../_shared/telegram.ts";
