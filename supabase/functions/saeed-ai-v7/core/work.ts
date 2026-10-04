@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 work module: quota, retry bookkeeping and AI tool execution.
+/** Nexa saeed-ai-v7 work module: quota, retry bookkeeping and AI tool execution.
  *  Provider-first: every AI call (chat, vision, OCR, STT, PDF, receipts, web)
  *  goes through the ACTIVE provider from telegram_bot_config. No silent
  *  rerouting to Gemini when OpenRouter is selected; incompatible media is

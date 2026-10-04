@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 admin module. Source moved without behavioral rewrites. */
+/** Nexa saeed-ai-v7 admin module. Source moved without behavioral rewrites. */
 import { ACCESS, ADMIN, GK, RK, TOKEN, admin, db } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
 import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
@@ -276,7 +276,7 @@ export async function exportAll(id: number, chat: number) {
   const body =
     "# گفت‌وگو با Nexa\n\n" +
     data
-      .map((x) => `## ${x.role === "model" ? "🤖 Saeed AI" : "👤 من"} — ${new Date(x.created_at).toLocaleString("fa-IR", { timeZone: "Asia/Tehran" })}\n\n${x.body}`)
+      .map((x) => `## ${x.role === "model" ? "🤖 Nexa" : "👤 من"} — ${new Date(x.created_at).toLocaleString("fa-IR", { timeZone: "Asia/Tehran" })}\n\n${x.body}`)
       .join("\n\n---\n\n");
   return documentSend(chat, body, "saeed-conversation.md");
 }

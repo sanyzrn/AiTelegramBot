@@ -1,4 +1,4 @@
-# گزارش بررسی پروژه Saeed AI (Telegram Bot) — نسخه 9.4.0
+# گزارش بررسی پروژه Nexa (Telegram Bot) — نسخه 9.4.0
 
 > تاریخ بررسی: ۲۰۲۶-۰۹-۲۲ · دامنه: کل `supabase/functions`، `supabase/migrations`، `tests` و workflowهای GitHub  
 > وضعیت تست‌ها هنگام بررسی: `node --experimental-strip-types --test tests/*.test.mjs` → **65/65 سبز**

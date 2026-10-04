@@ -1,4 +1,4 @@
-name: Import Saeed AI source (manual recovery only)
+name: Import Nexa source (manual recovery only)
 
 # This is a destructive recovery action. Never run on a push to main.
 on:
@@ -68,5 +68,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore: import current Saeed AI Edge Function source'
+          git commit -m 'chore: import current Nexa Edge Function source'
           git push origin HEAD:main

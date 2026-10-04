@@ -1,4 +1,4 @@
-name: Saeed AI Migrations Check
+name: Nexa Migrations Check
 # Staging-lite: applies every migration twice (idempotency) to an empty
 # PostgreSQL with stand-ins for Supabase-managed objects, then runs a
 # behavioural smoke test of the RPCs and constraints the functions rely on.

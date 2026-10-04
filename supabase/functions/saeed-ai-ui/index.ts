@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-ui index module: Telegram webhook gateway. */
+/** Nexa saeed-ai-ui index module: Telegram webhook gateway. */
 import { APP_VERSION } from "../_shared/version.ts";
 import { selectToolIntent } from "../_shared/intent-model.ts";
 import { forwardsPendingTool, mustForward } from "../_shared/gateway-route.ts";

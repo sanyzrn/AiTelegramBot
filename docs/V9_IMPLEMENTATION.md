@@ -1,4 +1,4 @@
-# Saeed AI v9 implementation
+# Nexa v9 implementation
 
 Scope: preserve existing data; append tasks rather than replace; exact decimal arithmetic for supported calculations; recurring reminders with snooze/cancel and ownership validation; natural-language tool routing; modular service boundaries; opt-in morning briefing, expenses and shopping list. External weather/FX data must be sourced and timestamped before inclusion; do not fabricate them.
 

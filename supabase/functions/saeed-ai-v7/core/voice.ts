@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-v7 voice module. Source moved without behavioral rewrites. */
+/** Nexa saeed-ai-v7 voice module. Source moved without behavioral rewrites. */
 import { voiceFollowupMode } from "../../_shared/voice-intent.ts";
 import { db } from "./state.ts";
 import { startWork } from "./work.ts";
