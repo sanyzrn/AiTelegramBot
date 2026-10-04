@@ -259,7 +259,7 @@ test('both entrypoints boot when only an OpenRouter key exists', () => {
 test('work.ts wires the capability gate and provider-aware calls', () => {
   const work = read('supabase/functions/saeed-ai-v7/core/work.ts');
   assert.match(work, /rejectUnsupported/, 'capability gate exists');
-  assert.match(work, /groundedSearch\(input, system, s, \{ gemini: GK, openrouter: RK \}\)/, 'web tool passes the active config and both keys');
+  assert.match(work, /groundedSearch\(input, system, s, aiKeys\)/, 'web tool passes the active config and the current user keys');
   assert.match(work, /s\.chatSearch && s\.provider === "gemini"/, 'chat grounding is Gemini-only by design');
   assert.match(work, /TTS_PROVIDER/, 'voice-out explains itself when the active provider cannot synthesize');
   assert.doesNotMatch(work, /pickSearchModel/, 'search model picking lives in the search module only');
@@ -267,7 +267,7 @@ test('work.ts wires the capability gate and provider-aware calls', () => {
 
 test('reminder/task parsing no longer pins the gemini provider', () => {
   const life = read('supabase/functions/saeed-ai-v7/core/life.ts');
-  assert.match(life, /const s = await cfg\(\);/, 'parsing uses the active provider config');
+  assert.match(life, /userAi = await userCfg\(id\)/, 'parsing resolves the current user provider and key');
   assert.match(life, /failMessage\(e, \{ provider: s\.provider/, 'AI failures surface precise messages');
 });
 
@@ -278,10 +278,13 @@ test('the reminders dispatcher gates briefing voice-out on the active provider',
   assert.match(reminders, /voiceCfg\.prefer === "openrouter"\) return/, 'the speak dependency checks the provider before synthesizing');
 });
 
-test('tool intents reachable from the gateway use the provider-aware classifier', () => {
-  for (const file of ['saeed-ai-v7/index.ts', 'saeed-ai-ui/index.ts']) {
-    const src = read(join('supabase/functions', file));
-    assert.match(src, /selectToolIntent\((?:requestText|text), (?:await cfg\(\)|await config\(\)), \{ gemini: GK, openrouter: RK \}\)/, `${file} classifies on the active provider`);
-    assert.doesNotMatch(src, /selectToolIntent\([^,]+, GK,/, `${file} no longer hardcodes the Gemini classifier`);
-  }
+test('tool intents reachable from both entrypoints use each user\'s provider and key', () => {
+  const v7 = read('supabase/functions/saeed-ai-v7/index.ts');
+  const ui = read('supabase/functions/saeed-ai-ui/index.ts');
+  assert.match(v7, /userCfg\(id\)/, 'processor resolves per-user AI context');
+  assert.match(v7, /selectToolIntent\(requestText, userAi\.config, userAi\.keys\)/, 'processor classifier uses per-user keys');
+  assert.match(ui, /userConfig\(user\.id\)/, 'gateway resolves per-user AI context');
+  assert.match(ui, /selectToolIntent\(text, userAi\.config, userAi\.keys\)/, 'gateway classifier uses per-user keys');
+  assert.doesNotMatch(v7, /selectToolIntent\([^\n]+GK/, 'processor does not hardcode global provider keys');
+  assert.doesNotMatch(ui, /selectToolIntent\([^\n]+GK/, 'gateway does not hardcode global provider keys');
 });
