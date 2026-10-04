@@ -18,7 +18,7 @@ import { resolveCapabilities, modalityErrorCode, type Modality } from "../../_sh
 import { parseReceiptJson, proposeReceipt, RECEIPT_PROMPT } from "../../_shared/receipt.ts";
 import { sendVoice, synthesize } from "../../_shared/tts.ts";
 import { TOKEN, TTS_MODEL, admin, db } from "./state.ts";
-import { cfg, documentSend, pref, save, userCfg, type Pref } from "./admin.ts";
+import { documentSend, pref, save, userCfg, type Pref } from "./admin.ts";
 import type { BotConfig } from "../../_shared/bot-config.ts";
 import type { TgMessage } from "../../_shared/telegram.ts";
 import { base64, doc, file, media, parseDoc, repo, type Doc, type Media } from "./media.ts";
