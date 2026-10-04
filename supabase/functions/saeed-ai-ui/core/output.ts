@@ -1,4 +1,4 @@
-/** Saeed AI saeed-ai-ui output module: answer post-processing and delivery. */
+/** Nexa saeed-ai-ui output module: answer post-processing and delivery. */
 import { tg } from "./transport.ts";
 import { escapeHtml } from "../../_shared/format.ts";
 import { sendRich } from "../../_shared/telegram.ts";
