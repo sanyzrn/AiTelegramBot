@@ -1,10 +1,16 @@
 /** Runtime model/provider configuration from telegram_bot_config, cached per isolate. */
 import { pickSearchModel } from "./web-search.ts";
 
+export type Provider = "gemini" | "openrouter" | "custom";
+export const isProvider = (v: unknown): v is Provider => v === "gemini" || v === "openrouter" || v === "custom";
+
 export type BotConfig = {
-  provider: "gemini" | "openrouter";
+  provider: Provider;
   gemini: string;
   openrouter: string;
+  /** Custom OpenAI-compatible provider: model id and base URL (https://host/v1). */
+  custom: string;
+  customBaseUrl: string;
   search: string;
   daily: number;
   /** Google Search grounding for ordinary chat; admin-switchable, on by default.
@@ -15,6 +21,13 @@ export type BotConfig = {
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const DEFAULT_OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free";
+/** The slice of BotConfig every request adapter needs. */
+export type ProviderCfg = Pick<BotConfig, "provider" | "gemini" | "openrouter"> & {
+  custom?: string;
+  customBaseUrl?: string;
+  search?: string;
+};
+
 const TTL_MS = 30000;
 let cache: { at: number; value: BotConfig } | null = null;
 
@@ -30,13 +43,15 @@ export function parseBotConfig(
   const x = new Map(rows.map((v) => [v.setting_key, v.setting_value]));
   const daily = Number(x.get("daily_limit") ?? 40);
   const explicit = x.get("provider");
-  const provider = explicit === "gemini" || explicit === "openrouter"
+  const provider = isProvider(explicit)
     ? explicit
     : (hint.preferProvider === "gemini" ? "gemini" : "openrouter");
   return {
     provider,
     gemini: x.get("model") || DEFAULT_GEMINI_MODEL,
     openrouter: x.get("openrouter_model") || DEFAULT_OPENROUTER_MODEL,
+    custom: x.get("custom_model") || "",
+    customBaseUrl: x.get("custom_base_url") || "",
     search: pickSearchModel(x.get("search_model") || x.get("model")),
     daily: Number.isFinite(daily) ? daily : 40,
     chatSearch: x.get("chat_search") !== "off",

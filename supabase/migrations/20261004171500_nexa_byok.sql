@@ -69,6 +69,8 @@ $$;
 REVOKE ALL ON FUNCTION public.nexa_user_api_set(BIGINT,TEXT,TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.nexa_user_api_set(BIGINT,TEXT,TEXT) TO service_role;
 
+-- Later migrations widen the return type; keep this file re-runnable.
+DROP FUNCTION IF EXISTS public.nexa_user_api_get(BIGINT);
 CREATE OR REPLACE FUNCTION public.nexa_user_api_get(p_user_id BIGINT)
 RETURNS TABLE(provider TEXT, api_key TEXT)
 LANGUAGE sql

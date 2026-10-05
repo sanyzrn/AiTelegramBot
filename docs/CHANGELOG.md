@@ -5,6 +5,18 @@
 
 # Nexa · Telegram bot
 
+## v10.6.1 personal keys are unlimited
+
+- Users running on **their own API key** have no daily quota and no per-minute rate limit (they pay for their usage). Users on the admin's key keep the limits configured in the admin panel (default, per-user and the flood guard). Enforced inside `saeed_ai_reserve_daily` (migration `20261005130000`) so every path — chat, tools, voice — behaves the same; usage is still counted for stats.
+
+## v10.6.0 custom OpenAI-compatible provider
+
+- **New provider: «🟣 Custom (OpenAI-compatible)».** Any server exposing `POST {base}/chat/completions` (OpenAI, Groq, DeepSeek, Together, vLLM, LM Studio…) can now be used.
+  - *Personal keys (BYOK):* a three-step flow asks for the API address, the model name and the key; one tiny completion verifies all three before anything is stored. Key stays in Supabase Vault; the URL and model live next to it (migration `20261005120000`).
+  - *Admin panel:* new `🟣 Custom`, `🔗 آدرس Custom` and `✏️ مدل Custom` buttons; the key is the `CUSTOM_API_KEY` secret. Chat, classifier, vision/audio/PDF attempts and the morning-briefing voice all follow the active provider with no fallback to another one.
+  - *Safety:* base URLs must be public `https` (no localhost/private ranges/credentials/query strings), redirects are refused so a key can never be bounced elsewhere, and the web-search tool refuses on a generic endpoint instead of answering without verifiable sources.
+- **Review fixes.** Users outside the allowlist were not rate-limited at all, although they can trigger DB writes and outbound key/URL validation — they now share the flood guard. Commands such as `/start` are no longer swallowed as an API key/URL during onboarding. The briefing voice-out gate is now an allowlist (`Gemini only`) instead of a deny-list. Migrations are re-runnable again after the BYOK RPC changed shape; `saeed_ai_metrics`, `telegram_bot_config` and the admin-flow table accept the new provider.
+
 ## v10.4.0 final polish: guide page, sharper answers, redesigned dashboard
 
 - **Slim tools keyboard + «📖 راهنمای ابزارها».** Every tool already starts by itself from plain chat, photos, files or voice, so the tools page no longer lists one button per tool. It now holds the guide (every tool with ready-to-copy example phrases, `_shared/guide.ts`), fun, profile, MD export and life. `/help` opens the guide. Buttons still on users' old keyboards keep working (all tool labels stay routed). Migration `20260926120000` adds the `guide` keyboard page.

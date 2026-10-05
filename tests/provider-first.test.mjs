@@ -253,8 +253,8 @@ test('the Gemini API URL appears only in the provider transports that legitimate
 test('both entrypoints boot when only an OpenRouter key exists', () => {
   const v7 = read('supabase/functions/saeed-ai-v7/core/state.ts');
   const ui = read('supabase/functions/saeed-ai-ui/core/state.ts');
-  assert.match(v7, /\(GK \|\| RK\)/, 'processor ready() accepts either provider key');
-  assert.match(ui, /\(GK \|\| RK\)/, 'gateway ready() accepts either provider key');
+  assert.match(v7, /\(GK \|\| RK \|\| CK\)/, 'processor ready() accepts either provider key');
+  assert.match(ui, /\(GK \|\| RK \|\| CK\)/, 'gateway ready() accepts either provider key');
 });
 
 test('work.ts wires the capability gate and provider-aware calls', () => {
@@ -274,9 +274,9 @@ test('reminder/task parsing no longer pins the gemini provider', () => {
 
 test('the reminders dispatcher gates briefing voice-out on the active provider', () => {
   const dispatch = read('supabase/functions/_shared/dispatch.ts');
-  assert.match(dispatch, /voiceCfg\.prefer !== "openrouter"/, 'no hidden Gemini TTS while OpenRouter is active');
+  assert.match(dispatch, /voiceCfg\.prefer === "gemini"/, 'no hidden Gemini TTS while another provider is active');
   const reminders = read('supabase/functions/saeed-ai-reminders/index.ts');
-  assert.match(reminders, /voiceCfg\.prefer === "openrouter" \|\| !geminiKey\) return/, 'the speak dependency checks the per-user provider and key before synthesizing');
+  assert.match(reminders, /voiceCfg\.prefer !== "gemini" \|\| !geminiKey\) return/, 'the speak dependency checks the per-user provider and key before synthesizing');
 });
 
 test('tool intents reachable from both entrypoints use each user\'s provider and key', () => {

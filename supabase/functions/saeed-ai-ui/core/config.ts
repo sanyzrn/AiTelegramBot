@@ -15,7 +15,7 @@ export function config() {
 
 export async function userConfig(id: number) {
   const base = await config();
-  return userAiContext(db, id, base, { gemini: GK, openrouter: RK });
+  return userAiContext(db, id, base, { gemini: GK, openrouter: RK, custom: CK });
 }
 
 /** Merged-role history (strict providers reject repeated roles). */

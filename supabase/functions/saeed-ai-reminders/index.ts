@@ -8,6 +8,7 @@ const BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const GKEY = Deno.env.get("GEMINI_API_KEY") || "";
 const RKEY = Deno.env.get("OPENROUTER_API_KEY") || "";
+const CKEY = Deno.env.get("CUSTOM_API_KEY") || "";
 const TTS_MODEL = Deno.env.get("GEMINI_TTS_MODEL") || undefined;
 let KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 try { KEY = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}").default || KEY; } catch {}
@@ -32,11 +33,11 @@ const deps = () => ({
   // personal Gemini key; OpenRouter users stay text-only with no hidden fallback.
   speak: async (chat: number, text: string, voiceCfg: VoiceConfig = {}) => {
     const geminiKey = voiceCfg.geminiKey || "";
-    if (voiceCfg.prefer === "openrouter" || !geminiKey) return;
+    if (voiceCfg.prefer !== "gemini" || !geminiKey) return;
     const { mp3, seconds } = await synthesize(text, geminiKey, { model: TTS_MODEL, style: "Say cheerfully, like an energetic friend waking someone up, in Persian", timeoutMs: 20000 });
     await sendVoice(TOKEN, chat, mp3, seconds);
   },
-  keys: { gemini: GKEY, openrouter: RKEY },
+  keys: { gemini: GKEY, openrouter: RKEY, custom: CKEY },
 });
 
 Deno.serve(async (request) => {

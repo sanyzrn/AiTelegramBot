@@ -6,7 +6,8 @@
  */
 import { inferToolIntent, type ToolIntent } from "./tool-intent.ts";
 import { parseJsonObject } from "./ai.ts";
-import type { BotConfig } from "./bot-config.ts";
+import type { ProviderCfg } from "./bot-config.ts";
+import { chatCompletionsUrl, normalizeBaseUrl } from "./openai-compat.ts";
 import type { Fetcher } from "./telegram.ts";
 
 const names = ["chat", "remind", "tasks", "web", "repo", "summarize", "translate", "rewrite", "calc", "email", "ideas", "expenses", "shopping", "briefing", "receipt", "joke", "story", "horoscope", "trivia", "roast"] as const;
@@ -50,11 +51,11 @@ async function classifyGemini(input: string, key: string, model: string, deadlin
   return direct;
 }
 
-/** OpenRouter path: one strict-JSON chat completion on the active model. */
-async function classifyOpenRouter(input: string, key: string, model: string, deadline: AbortSignal, fetcher: Fetcher): Promise<ToolIntent> {
+/** OpenRouter / custom OpenAI-compatible path: one strict-JSON chat completion on the active model. */
+async function classifyOpenAiCompat(input: string, key: string, model: string, url: string, deadline: AbortSignal, fetcher: Fetcher): Promise<ToolIntent> {
   const direct = inferToolIntent(input);
   try {
-    const r = await fetcher("https://openrouter.ai/api/v1/chat/completions", {
+    const r = await fetcher(url, {
       method: "POST",
       headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -67,6 +68,7 @@ async function classifyOpenRouter(input: string, key: string, model: string, dea
         temperature: 0,
       }),
       signal: deadline,
+      redirect: "error",
     });
     if (!r.ok) return direct;
     const j = await r.json();
@@ -80,19 +82,21 @@ async function classifyOpenRouter(input: string, key: string, model: string, dea
 /** Classify only; allowlisted output cannot execute arbitrary tools. Fail closed to chat. */
 export async function selectToolIntent(
   input: string,
-  cfg: Pick<BotConfig, "provider" | "gemini" | "openrouter">,
-  keys: { gemini: string; openrouter?: string },
+  cfg: ProviderCfg,
+  keys: { gemini: string; openrouter?: string; custom?: string },
   fetcher: Fetcher = fetch,
 ): Promise<ToolIntent> {
   const direct = inferToolIntent(input);
   if (direct !== "chat" || !hint.test(input)) return direct;
   const isGemini = cfg.provider === "gemini";
-  const key = (isGemini ? keys.gemini : keys.openrouter) || "";
-  const model = String((isGemini ? cfg.gemini : cfg.openrouter) || "").trim();
+  const isCustom = cfg.provider === "custom";
+  const key = (isGemini ? keys.gemini : isCustom ? keys.custom : keys.openrouter) || "";
+  const model = String((isGemini ? cfg.gemini : isCustom ? cfg.custom : cfg.openrouter) || "").trim();
+  const customBase = isCustom ? normalizeBaseUrl(cfg.customBaseUrl || "") : null;
   // No key for the ACTIVE provider: no hidden calls to the other provider.
-  if (!key || !model) return direct;
+  if (!key || !model || (isCustom && !customBase)) return direct;
   const deadline = AbortSignal.timeout(CLASSIFY_DEADLINE_MS);
-  return isGemini
-    ? classifyGemini(input, key, model, deadline)
-    : classifyOpenRouter(input, key, model, deadline, fetcher);
+  if (isGemini) return classifyGemini(input, key, model, deadline);
+  const url = isCustom ? chatCompletionsUrl(customBase!) : "https://openrouter.ai/api/v1/chat/completions";
+  return classifyOpenAiCompat(input, key, model, url, deadline, fetcher);
 }

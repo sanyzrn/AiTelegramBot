@@ -58,7 +58,31 @@ END $$;
 INSERT INTO public.saeed_ai_reminders (telegram_user_id, telegram_chat_id, note, remind_at, repeat_rule) VALUES (42, 42, 'test', now() - interval '1 minute', 'daily');
 DO $$ DECLARE n int; BEGIN SELECT count(*) INTO n FROM public.saeed_ai_claim_due_reminders(10); ASSERT n = 1, 'reminder claim'; END $$;
 
-DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261004171500', 'schema version'; END $$;
+-- Personal API key => no daily limit; others keep it (limit is 2 here).
+DO $$ DECLARE r jsonb; BEGIN
+  PERFORM public.nexa_user_api_set(55, 'gemini', 'gemini-personal-key-123');
+  FOR i IN 1..5 LOOP
+    r := public.saeed_ai_reserve_daily(55, 2000 + i, false); ASSERT (r->>'allowed')::bool, 'personal key is unlimited';
+  END LOOP;
+  r := public.saeed_ai_reserve_daily(56, 2100, false); r := public.saeed_ai_reserve_daily(56, 2101, false);
+  r := public.saeed_ai_reserve_daily(56, 2102, false); ASSERT NOT (r->>'allowed')::bool, 'admin-key user keeps the limit';
+  UPDATE public.telegram_bot_user_api SET enabled = false WHERE telegram_user_id = 55;
+  r := public.saeed_ai_reserve_daily(55, 2200, false); ASSERT NOT (r->>'allowed')::bool, 'disabled personal key falls back to the limit';
+END $$;
+
+-- Personal custom OpenAI-compatible provider: URL + model are stored next to the key.
+DO $$ DECLARE r record; BEGIN
+  ASSERT public.nexa_user_api_set(77, 'custom', 'sk-custom-secret-123', 'https://api.example.com/v1', 'my-model') = true, 'custom set';
+  SELECT * INTO r FROM public.nexa_user_api_get(77);
+  ASSERT r.provider = 'custom' AND r.api_key = 'sk-custom-secret-123' AND r.base_url = 'https://api.example.com/v1' AND r.model = 'my-model', 'custom get';
+  ASSERT public.nexa_user_api_set(78, 'custom', 'sk-custom-secret-123', 'http://insecure.example.com', 'm') = false, 'custom requires https';
+  ASSERT public.nexa_user_api_set(78, 'custom', 'sk-custom-secret-123', 'https://api.example.com/v1', NULL) = false, 'custom requires model';
+  ASSERT public.nexa_user_api_set(79, 'gemini', 'gemini-secret-key-123') = true, 'builtin provider keeps 3-arg form';
+  INSERT INTO public.telegram_bot_config (setting_key, setting_value) VALUES ('custom_base_url', 'https://api.example.com/v1'), ('custom_model', 'my-model');
+  INSERT INTO public.saeed_ai_metrics (telegram_update_id, telegram_user_id, provider, model, status) VALUES (900001, 77, 'custom', 'my-model', 'success');
+END $$;
+
+DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261005130000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 DO $$ BEGIN INSERT INTO public.telegram_bot_preferences (telegram_user_id, keyboard_page) VALUES (43, 'guide'); END $$;
 ROLLBACK;

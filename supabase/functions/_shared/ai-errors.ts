@@ -20,6 +20,10 @@ export function failMessage(err: unknown, ctx: AiErrorContext = {}): string {
     return "🔑 کلید Gemini تنظیم نشده؛ الان سرویس فعال همین باشه. مدیر باید کلیدش رو ثبت کنه یا از پنل مدیریت، Provider رو عوض کنه. 💛";
   if (/AI_KEY_OPENROUTER/.test(s))
     return "🔑 کلید OpenRouter تنظیم نشده؛ الان سرویس فعال همین باشه. مدیر باید کلیدش رو ثبت کنه یا از پنل مدیریت، Provider رو عوض کنه. 💛";
+  if (/AI_KEY_CUSTOM/.test(s))
+    return "🔑 کلید سرویس OpenAI-compatible تنظیم نشده؛ مدیر باید CUSTOM_API_KEY رو ثبت کنه یا Provider رو عوض کنه. 💛";
+  if (/AI_CUSTOM_CONFIG/.test(s))
+    return "🔗 آدرس یا نام مدل سرویس OpenAI-compatible کامل ثبت نشده؛ از پنل مدیریت (مدل‌ها) آدرس و مدل Custom رو تنظیم کن. 💛";
   if (/AI_AUDIO_UNSUPPORTED/.test(s))
     return `🎙 مدل فعلی${modelNote(ctx)} از ورودی صوتی پشتیبانی نمی‌کنه؛ پیامت رو تایپ کن یا از مدیر بخواه مدل چندوجهی (با قابلیت صوت) فعال کنه. 💛`;
   if (/AI_IMAGE_UNSUPPORTED/.test(s))
@@ -35,7 +39,7 @@ export function failMessage(err: unknown, ctx: AiErrorContext = {}): string {
   if (/AI_MEDIA/.test(s))
     return "📦 این نوع فایل رو Provider فعلی نمی‌پذیره؛ عکس، PDF، Word، Excel، TXT یا CSV بفرست. 😊";
   if (/TTS_PROVIDER/.test(s))
-    return `🔊 ساخت صدای خروجی فقط با موتور Gemini فعاله؛ الان Provider فعال ${ctx.provider === "openrouter" ? "OpenRouter" : "سرویس دیگه‌ای"} ـه. متن جواب همین‌جا برات نوشته شده. 💛`;
+    return `🔊 ساخت صدای خروجی فقط با موتور Gemini فعاله؛ الان Provider فعال ${ctx.provider === "openrouter" ? "OpenRouter" : ctx.provider === "custom" ? "OpenAI-compatible" : "سرویس دیگه‌ای"} ـه. متن جواب همین‌جا برات نوشته شده. 💛`;
   if (/AI_(401|403)/.test(s))
     return "🔑 دسترسی به سرویس هوش مصنوعی مشکل داره؛ به مدیر خبر بده. 💛";
   if (/AI_402/.test(s))

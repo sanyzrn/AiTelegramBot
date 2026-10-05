@@ -6,6 +6,8 @@ import { createTg } from "../../_shared/telegram.ts";
 export const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
   RK = Deno.env.get("OPENROUTER_API_KEY") || "",
+  /** Bot-wide key of the admin-configured custom OpenAI-compatible provider. */
+  CK = Deno.env.get("CUSTOM_API_KEY") || "",
   BASE = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""),
   WEBAPP_URL = /^https:\/\//.test(Deno.env.get("WEBAPP_URL") || "") ? Deno.env.get("WEBAPP_URL")! : "",
   ACCESS = readAccessEnv(Deno.env),
@@ -29,7 +31,7 @@ const client =
 export const db = client as SupabaseClient,
   tg = createTg(TOKEN),
   /** At least one provider key: the ACTIVE provider is the only one called. */
-  ready = () => !!(client && TOKEN && (GK || RK) && ACCESS.adminId),
+  ready = () => !!(client && TOKEN && (GK || RK || CK) && ACCESS.adminId),
   admin = (id: unknown) => isAdmin(ACCESS, id),
   out = (x: unknown, s = 200) =>
     Response.json(x, { status: s, headers: { "Cache-Control": "no-store" } });

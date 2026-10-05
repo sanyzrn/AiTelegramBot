@@ -1,10 +1,10 @@
-/** Gemini and OpenRouter request adapter bound to this function's keys (see _shared/ai.ts). */
+/** Gemini, OpenRouter and custom OpenAI-compatible request adapter bound to this function's keys (see _shared/ai.ts). */
 import { generate, type AiKeys, type Content } from "../../_shared/ai.ts";
-import type { BotConfig } from "../../_shared/bot-config.ts";
+import type { ProviderCfg } from "../../_shared/bot-config.ts";
 
 /** `opts.search` enables Google Search grounding; sources are appended when the model grounded. */
 export function ai(
-  s: Pick<BotConfig, "provider" | "gemini" | "openrouter"> & { search?: string },
+  s: ProviderCfg,
   keys: AiKeys,
   contents: Content[],
   system: string,
