@@ -1,5 +1,5 @@
 /** Nexa saeed-ai-ui config module: shared menus, runtime config and conversation history. */
-import { GK, RK, db } from "./state.ts";
+import { CK, GK, RK, db } from "./state.ts";
 import { readBotConfig } from "../../_shared/bot-config.ts";
 import { readHistory as sharedHistory } from "../../_shared/history.ts";
 import { userAiContext } from "../../_shared/user-ai.ts";
