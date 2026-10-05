@@ -4,7 +4,7 @@
 
 ### Telegram-native AI assistant with a secure Mini App, personal API keys, automation, and provider-first AI.
 
-[![Release](https://img.shields.io/badge/release-v10.6.0-6f42c1?style=flat-square)](./supabase/functions/_shared/version.ts)
+[![Release](https://img.shields.io/badge/release-v10.6.1-6f42c1?style=flat-square)](./supabase/functions/_shared/version.ts)
 [![Regression Tests](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/v9-regression.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/v9-regression.yml)
 [![Typecheck](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/shared-typecheck.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/shared-typecheck.yml)
 [![Migrations](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/migrations-check.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/migrations-check.yml)
@@ -200,6 +200,6 @@ A production deployment is considered healthy only when the deployment workflow 
 
 Built for Telegram. Designed to stay useful after the novelty wears off.
 
-**Nexa · v10.6.0**
+**Nexa · v10.6.1**
 
 </div>

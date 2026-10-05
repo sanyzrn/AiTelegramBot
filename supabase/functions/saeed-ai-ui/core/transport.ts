@@ -34,11 +34,19 @@ export function allowed(id: number, chat: { id?: unknown; type?: string } | unde
   return isAllowed(db, ACCESS, id, chat);
 }
 
+/** True when the user has an enabled personal API key. Read errors count as "no key" (limits stay on). */
+export async function hasPersonalKey(id: number) {
+  const { data, error } = await db.from("telegram_bot_user_api").select("enabled").eq("telegram_user_id", id).maybeSingle();
+  return !error && data?.enabled === true;
+}
+
 /**
  * Per-minute flood guard (the daily quota alone let one user burst hundreds of
  * requests). Fails open on a database error so a missing RPC never blocks chat.
  */
 export async function withinRate(id: number, limit: number) {
+  // A user on their own API key pays for their usage: no flood guard (admin-key users keep it).
+  if (await hasPersonalKey(id)) return true;
   const { data, error } = await db.rpc("saeed_ai_rate_hit", { p_user_id: id, p_limit: limit });
   if (error) {
     console.error("RATE", error.code);

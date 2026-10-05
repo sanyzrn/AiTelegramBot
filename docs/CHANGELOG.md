@@ -5,6 +5,10 @@
 
 # Nexa · Telegram bot
 
+## v10.6.1 personal keys are unlimited
+
+- Users running on **their own API key** have no daily quota and no per-minute rate limit (they pay for their usage). Users on the admin's key keep the limits configured in the admin panel (default, per-user and the flood guard). Enforced inside `saeed_ai_reserve_daily` (migration `20261005130000`) so every path — chat, tools, voice — behaves the same; usage is still counted for stats.
+
 ## v10.6.0 custom OpenAI-compatible provider
 
 - **New provider: «🟣 Custom (OpenAI-compatible)».** Any server exposing `POST {base}/chat/completions` (OpenAI, Groq, DeepSeek, Together, vLLM, LM Studio…) can now be used.
