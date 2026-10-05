@@ -4,7 +4,7 @@
 
 ### Telegram-native AI assistant with a secure Mini App, personal API keys, automation, and provider-first AI.
 
-[![Release](https://img.shields.io/badge/release-v10.5.0-6f42c1?style=flat-square)](./supabase/functions/_shared/version.ts)
+[![Release](https://img.shields.io/badge/release-v10.6.0-6f42c1?style=flat-square)](./supabase/functions/_shared/version.ts)
 [![Regression Tests](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/v9-regression.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/v9-regression.yml)
 [![Typecheck](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/shared-typecheck.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/shared-typecheck.yml)
 [![Migrations](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/migrations-check.yml/badge.svg?branch=main)](https://github.com/sanyzrn/AiTelegramBot/actions/workflows/migrations-check.yml)
@@ -28,8 +28,8 @@ Nexa follows a **provider-first architecture**: the selected provider and model 
 
 | Area | What Nexa does |
 | --- | --- |
-| 🤖 **AI chat** | Gemini or OpenRouter, configurable models, tones, answer length and provider-aware capabilities |
-| 🔑 **Personal API keys** | Self-service BYOK for Gemini/OpenRouter, stored server-side in Supabase Vault |
+| 🤖 **AI chat** | Gemini, OpenRouter or any OpenAI-compatible endpoint, configurable models, tones, answer length and provider-aware capabilities |
+| 🔑 **Personal API keys** | Self-service BYOK for Gemini/OpenRouter/custom OpenAI-compatible endpoints, stored server-side in Supabase Vault |
 | 🌐 **Live search** | Provider-aware grounded web search with source handling |
 | 🖼️ **Media & files** | Images, OCR, voice, audio, PDF and document analysis |
 | ⏰ **Life tools** | Reminders, recurring schedules, tasks, expenses, shopping lists and memories |
@@ -60,7 +60,9 @@ Its backend is the [`saeed-ai-webapp`](supabase/functions/saeed-ai-webapp) Edge 
 Users who are not in the main access list are not forced into a dead end. Nexa can offer two paths:
 
 1. Send their Telegram Chat ID to the administrator and request access.
-2. Use their own **Gemini** or **OpenRouter** API key.
+2. Use their own **Gemini**, **OpenRouter** or **custom OpenAI-compatible** API key.
+
+The custom option asks for three things — the API address (public `https` only), the model name and the key — and verifies all three with one tiny completion before saving anything.
 
 Personal keys are validated before use and stored in **Supabase Vault**. The public application tables store only provider metadata and a secret reference, never the API key itself.
 
@@ -126,6 +128,8 @@ cd AiTelegramBot
 ### 2. Configure secrets
 
 Copy [`.env.example`](.env.example) and configure the required Telegram, Supabase and AI provider credentials.
+
+**Custom (OpenAI-compatible) provider.** Admins can select a third provider from the models page: set `CUSTOM_API_KEY` as a project secret, then use `🔗 آدرس Custom` (e.g. `https://api.openai.com/v1`) and `✏️ مدل Custom` in the admin panel. Any server that implements `POST {base}/chat/completions` works. Image/audio/PDF input is attempted at runtime and fails gracefully; the «🌐 آنلاین» tool and voice-out stay Gemini/OpenRouter-only because a generic endpoint cannot return verifiable sources.
 
 For production, store secrets in **Supabase project secrets** rather than committing a local `.env`.
 
@@ -196,6 +200,6 @@ A production deployment is considered healthy only when the deployment workflow 
 
 Built for Telegram. Designed to stay useful after the novelty wears off.
 
-**Nexa · v10.5.0**
+**Nexa · v10.6.0**
 
 </div>

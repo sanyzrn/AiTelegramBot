@@ -1,12 +1,12 @@
 /** Telegram menus, preferences and guarded navigation. */
 import { WEBAPP_URL, admin, db, tg } from "./state.ts";
-import { GK, RK } from "./state.ts";
+import { CK, GK, RK } from "./state.ts";
 import { cfg, configSet, exportMd, flow, save, stats, testModel, userCfg, type Pref } from "./admin.ts";
 import { send } from "./transport.ts";
 import { listTasks, profile } from "./life.ts";
 import { handleLifeMessage } from "../../_shared/life.ts";
 import { formatLocal, userTimeZone } from "../../_shared/timezone.ts";
-import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL } from "../../_shared/bot-config.ts";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL, type ProviderCfg } from "../../_shared/bot-config.ts";
 import { capabilityLine, resolveCapabilities } from "../../_shared/capabilities.ts";
 
 import { GUIDE_TEXT } from "../../_shared/guide.ts";
@@ -14,7 +14,7 @@ import { ADMIN_PAGES, BUTTON_COMMANDS, DASHBOARD_BUTTON, GUIDE_BUTTON, TONES, SI
 export { TONES, SIZES, LANG, TOOLS, MENU, rows, keyboard, toneGuide } from "./menu.ts";
 
 /** Best-effort capability summary of the active provider (never blocks the menu). */
-async function activeCapabilityLine(s: { provider: "gemini" | "openrouter"; gemini: string; openrouter: string }): Promise<string | null> {
+async function activeCapabilityLine(s: ProviderCfg): Promise<string | null> {
   try {
     const caps = await Promise.race([
       resolveCapabilities(s, { timeoutMs: 4000 }),
@@ -49,7 +49,7 @@ export async function show(id: number, chat: number, page: string) {
       reset: "⚠️ مطمئنی می‌خوای تاریخچه‌ی گفت‌وگومون پاک بشه؟ حافظه‌ها، تسک‌ها و خرج‌هات دست نمی‌خورن.",
       admin: `🛡 پنل مدیریت Nexa 👑\n🔎 جست‌وجوی گوگل در چت عادی: ${s.chatSearch && s.provider === "gemini" ? "روشن" : "خاموش (فقط با Gemini فعال)"}`,
       users: "👥 مدیریت کاربران\nبرای افزودن یا حذف شناسه عددی رو وارد می‌کنی.",
-      models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}`,
+      models: `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\nGemini: ${s.gemini}\nOpenRouter: ${s.openrouter}\nCustom: ${s.custom || "—"}`,
       quota: `📊 سقف پیش‌فرض روزانه: ${s.daily === 0 ? "نامحدود" : s.daily + " پیام"}`,
       voice: "🎙 ویست رسید! بگو چی کارش کنم: متنش رو بنویسم، خلاصه کنم، ترجمه کنم یا درخواستش رو انجام بدم؟ 😁",
       retry: "🙈 این بار جواب آماده نشد. از دکمه پایین «🔄 تلاش مجدد» رو بزن.",
@@ -57,7 +57,7 @@ export async function show(id: number, chat: number, page: string) {
   // Incompatible tools are surfaced, not silently broken: the tools page names
   // exactly what the ACTIVE model cannot accept right now. A slow capability
   // lookup must never stall the menu — the hint line is simply skipped.
-  if (page === "tools" && s.provider === "openrouter") {
+  if (page === "tools" && s.provider !== "gemini") {
     const caps = await Promise.race([
       resolveCapabilities(s, { timeoutMs: 3000 }),
       new Promise<null>((r) => setTimeout(() => r(null), 3500)),
@@ -68,7 +68,7 @@ export async function show(id: number, chat: number, page: string) {
       if (caps.input.audio === false) blocked.push("🎙 صوت");
       if (caps.input.pdf === false) blocked.push("📄 PDF");
       if (blocked.length)
-        body += `\n\n⚠️ مدل فعلی (${s.openrouter}) فقط «${capabilityLine(caps)}» می‌فهمه؛ این‌ها فعلاً غیرفعالن: ${blocked.join("، ")}.`;
+        body += `\n\n⚠️ مدل فعلی (${s[s.provider]}) فقط «${capabilityLine(caps)}» می‌فهمه؛ این‌ها فعلاً غیرفعالن: ${blocked.join("، ")}.`;
     }
   }
   if (page === "models") {
@@ -80,7 +80,7 @@ export async function show(id: number, chat: number, page: string) {
     const gmCaps = s.provider === "gemini"
       ? await activeCapabilityLine(s)
       : GK ? capabilityLine(await resolveCapabilities({ provider: "gemini", gemini: s.gemini, openrouter: s.openrouter })) : null;
-    body = `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\n🔵 OpenRouter: ${s.openrouter}${orCaps ? ` — ورودی: ${orCaps}` : ""}${!RK ? " (کلید ثبت نشده)" : ""}\n🟢 Gemini: ${s.gemini}${gmCaps ? ` — ورودی: ${gmCaps}` : ""}${!GK ? " (کلید ثبت نشده)" : ""}\n🔊 خروجی صوتی («بخونش»): ${s.provider === "gemini" && GK ? "فعال" : "فقط با Gemini فعال"}`;
+    body = `🤖 مدیریت مدل‌ها (فقط مدیر)\nفعال: ${s.provider}\n🔵 OpenRouter: ${s.openrouter}${orCaps ? ` — ورودی: ${orCaps}` : ""}${!RK ? " (کلید ثبت نشده)" : ""}\n🟢 Gemini: ${s.gemini}${gmCaps ? ` — ورودی: ${gmCaps}` : ""}${!GK ? " (کلید ثبت نشده)" : ""}\n🟣 Custom (OpenAI-compatible): ${s.custom || "مدل ثبت نشده"} @ ${s.customBaseUrl || "آدرس ثبت نشده"}${!CK ? " (کلید CUSTOM_API_KEY ثبت نشده)" : ""}\n🔊 خروجی صوتی («بخونش»): ${s.provider === "gemini" && GK ? "فعال" : "فقط با Gemini فعال"}`;
   }
   if (page === "users") {
     const { data } = await db
@@ -241,6 +241,8 @@ export async function navigate(id: number, chat: number, text: string, p: Pref) 
       "👤 سهمیه کاربر": "set_daily_user",
       "✏️ مدل Gemini": "add_model",
       "✏️ مدل OpenRouter": "add_openrouter_model",
+      "✏️ مدل Custom": "add_custom_model",
+      "🔗 آدرس Custom": "add_custom_url",
     };
     if (tasks[text]) {
       await flow(id, tasks[text]);
@@ -248,17 +250,19 @@ export async function navigate(id: number, chat: number, text: string, p: Pref) 
         chat,
         tasks[text] === "set_daily_user"
           ? "شناسه و سهمیه رو بفرست، مثلاً 123456789:40"
-          : tasks[text].includes("model")
+          : tasks[text] === "add_custom_url"
+            ? "آدرس API سرویس OpenAI-compatible رو بفرست (https، مثلاً https://api.openai.com/v1)."
+            : tasks[text].includes("model")
             ? "شناسه مدل رو بفرست؛ اول اتصالش رو تست می‌کنم."
             : "شناسه یا عدد موردنظر رو بفرست.",
       );
       return true;
     }
-    if (text === "🟢 Gemini" || text === "🔵 OpenRouter") {
+    if (text === "🟢 Gemini" || text === "🔵 OpenRouter" || text === "🟣 Custom") {
       const s = await cfg(),
-        provider = text === "🟢 Gemini" ? "gemini" : "openrouter";
+        provider = text === "🟢 Gemini" ? "gemini" : text === "🟣 Custom" ? "custom" : "openrouter";
       try {
-        await testModel(provider, s[provider]);
+        await testModel(provider, s[provider], s.customBaseUrl);
         await configSet("provider", provider);
         await show(id, chat, "models");
       } catch {

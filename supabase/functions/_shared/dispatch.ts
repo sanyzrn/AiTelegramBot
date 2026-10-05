@@ -2,6 +2,7 @@
  * Minute dispatcher logic (reminders, briefings, alerts, weekly cards, sweep).
  * Pure dependencies are injected so every path is unit-testable without Deno.
  */
+import { isProvider, type Provider } from "./bot-config.ts";
 import { nextOccurrence, type RepeatRule } from "./repeat.ts";
 import { fetchCityWeather, fetchIranMarket, type CityRef, type Fetcher, type Market, type Weather } from "./briefing-sources.ts";
 import { composeMorningVoice, dayQuote, type MorningFacts, type VoiceConfig } from "./morning-voice.ts";
@@ -24,7 +25,7 @@ export type DispatchDeps = {
   speak?: (chat: number, text: string, voiceCfg?: VoiceConfig) => Promise<void>;
   fetcher?: Fetcher;
   now?: () => Date;
-  keys?: { gemini?: string; openrouter?: string };
+  keys?: { gemini?: string; openrouter?: string; custom?: string };
 };
 
 const TEHRAN: CityRef = { lat: 35.6892, lon: 51.389, label: "تهران" };
@@ -118,31 +119,43 @@ export async function morningVoiceConfig(
     const { data, error } = await deps.db.from("telegram_bot_config").select("setting_key,setting_value");
     if (error || !data) return {};
     const x = new Map<string, string>((data || []).map((v: { setting_key: string; setting_value: string }) => [String(v.setting_key), String(v.setting_value)]));
-    let prefer: "gemini" | "openrouter" = x.get("provider") === "openrouter" ? "openrouter" : "gemini";
+    const explicit = x.get("provider");
+    let prefer: Provider = explicit === "openrouter" || explicit === "custom" ? explicit : "gemini";
     let geminiKey = deps.keys?.gemini || "";
     let openrouterKey = deps.keys?.openrouter || "";
+    let customKey = deps.keys?.custom || "";
+    let customModel = x.get("custom_model") || "";
+    let customBaseUrl = x.get("custom_base_url") || "";
 
     if (userId && Number.isSafeInteger(userId) && userId > 0) {
       try {
         const { data: personal, error: personalError } = await deps.db.rpc("nexa_user_api_get", { p_user_id: userId });
         const row = Array.isArray(personal) ? personal[0] : personal;
-        const provider = row?.provider === "gemini" || row?.provider === "openrouter" ? row.provider : null;
+        const provider = isProvider(row?.provider) ? row.provider : null;
         const key = typeof row?.api_key === "string" ? row.api_key.trim() : "";
         if (!personalError && provider && key) {
           prefer = provider;
           geminiKey = provider === "gemini" ? key : "";
           openrouterKey = provider === "openrouter" ? key : "";
+          customKey = provider === "custom" ? key : "";
+          customModel = provider === "custom" ? String(row?.model || "") : "";
+          customBaseUrl = provider === "custom" ? String(row?.base_url || "") : "";
         }
       } catch {
         // No personal credential (or an older test DB): use the bot-wide config.
       }
     }
+    // Provider-first: the active provider is the only one ever called.
+    if (prefer === "custom") { geminiKey = ""; openrouterKey = ""; }
 
     return {
       geminiKey: geminiKey || undefined,
       openrouterKey: openrouterKey || undefined,
       geminiModel: x.get("model") || undefined,
       openrouterModel: x.get("openrouter_model") || undefined,
+      customKey: customKey || undefined,
+      customModel: customModel || undefined,
+      customBaseUrl: customBaseUrl || undefined,
       prefer,
     };
   } catch {
@@ -221,7 +234,7 @@ export async function dispatchBriefings(deps: DispatchDeps, cache: Cache = tickC
       }
       // Voice-out is the dedicated Gemini TTS engine: with OpenRouter active
       // there is no hidden Gemini call — the briefing stays text-only.
-      if (p.voice && deps.speak && voiceCfg.prefer !== "openrouter") {
+      if (p.voice && deps.speak && voiceCfg.prefer === "gemini") {
         try {
           await deps.speak(chat, intro + " " + signoff, voiceCfg);
         } catch (e) {

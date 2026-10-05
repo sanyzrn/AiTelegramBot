@@ -1,18 +1,19 @@
-/** Gemini / OpenRouter request adapter shared by gateway, processor and dispatcher.
+/** Gemini / OpenRouter / custom OpenAI-compatible request adapter shared by gateway, processor and dispatcher.
  *  The ACTIVE provider from telegram_bot_config is the only authority: no
  *  request is ever silently rerouted to the other provider. */
 import { extractSources, formatSources, pickSearchModel } from "./web-search.ts";
-import type { BotConfig } from "./bot-config.ts";
+import type { ProviderCfg } from "./bot-config.ts";
+import { chatCompletionsUrl, normalizeBaseUrl } from "./openai-compat.ts";
 import type { Fetcher } from "./telegram.ts";
 
 export type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
 export type Content = { role: string; parts: Part[] };
-export type AiKeys = { gemini: string; openrouter?: string };
+export type AiKeys = { gemini: string; openrouter?: string; custom?: string };
 export type AiResult = {
   text: string;
   usage: { input?: number | null; output?: number | null };
   model: string;
-  provider: "gemini" | "openrouter";
+  provider: "gemini" | "openrouter" | "custom";
   sources: number;
 };
 
@@ -68,7 +69,7 @@ async function classifyBadRequest(r: Response, kinds: Set<string>): Promise<Erro
  * live answers are never presented without their provenance.
  */
 export async function generate(
-  cfg: Pick<BotConfig, "provider" | "gemini" | "openrouter"> & { search?: string },
+  cfg: ProviderCfg,
   keys: AiKeys,
   contents: Content[],
   system: string,
@@ -116,9 +117,20 @@ export async function generate(
       sources: sources.length,
     };
   }
-  // OpenRouter: the active chat model receives every content type it supports,
-  // converted to the standard multimodal parts. No fallback to Gemini, ever.
-  if (!keys.openrouter) throw Error("AI_KEY_OPENROUTER");
+  // OpenRouter / custom OpenAI-compatible: the active chat model receives every
+  // content type it supports, converted to the standard multimodal parts.
+  // No fallback to another provider, ever.
+  const custom = cfg.provider === "custom";
+  const apiKey = custom ? keys.custom : keys.openrouter;
+  const endpoint = custom
+    ? (() => {
+        const base = normalizeBaseUrl(cfg.customBaseUrl || "");
+        return base ? chatCompletionsUrl(base) : "";
+      })()
+    : "https://openrouter.ai/api/v1/chat/completions";
+  const model = custom ? String(cfg.custom || "").trim() : cfg.openrouter;
+  if (!apiKey) throw Error(custom ? "AI_KEY_CUSTOM" : "AI_KEY_OPENROUTER");
+  if (!endpoint || !model) throw Error("AI_CUSTOM_CONFIG");
   const kinds = contentModalities(contents);
   const messages = [
     { role: "system", content: system },
@@ -135,11 +147,13 @@ export async function generate(
       };
     }),
   ];
-  const r = await fetcher("https://openrouter.ai/api/v1/chat/completions", {
+  const r = await fetcher(endpoint, {
     method: "POST",
-    headers: { Authorization: "Bearer " + keys.openrouter, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: cfg.openrouter, messages, max_tokens: Math.min(opts.maxTokens || 4096, 4096) }),
+    headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, messages, max_tokens: Math.min(opts.maxTokens || 4096, 4096) }),
     signal: AbortSignal.timeout(opts.timeoutMs || 90000),
+    // A user-supplied host must not bounce the request (and key) to another address.
+    ...(custom ? { redirect: "error" as const } : {}),
   });
   if (r.status === 400) throw await classifyBadRequest(r, kinds);
   if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 429) throw Error("AI_" + r.status);
@@ -148,8 +162,8 @@ export async function generate(
   return {
     text: typeof j.choices?.[0]?.message?.content === "string" ? j.choices[0].message.content.trim() : "",
     usage: { input: j.usage?.prompt_tokens, output: j.usage?.completion_tokens },
-    model: cfg.openrouter,
-    provider: "openrouter",
+    model,
+    provider: custom ? "custom" : "openrouter",
     sources: 0,
   };
 }

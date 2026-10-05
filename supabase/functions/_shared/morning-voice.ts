@@ -8,6 +8,8 @@
  *  2. fallbackIntro() + dayQuote() — deterministic, always-available intro so
  *     the briefing never falls back to a dry list, even with no AI key at all.
  */
+import { chatCompletionsUrl, normalizeBaseUrl } from './openai-compat.ts';
+
 export type MorningWeather = { temp: number; low: number; high: number; rain: number; clothing: string };
 export type MorningFacts = {
   dayLabel: string;
@@ -23,7 +25,11 @@ export type VoiceConfig = {
   openrouterKey?: string;
   geminiModel?: string;
   openrouterModel?: string;
-  prefer?: "gemini" | "openrouter";
+  customKey?: string;
+  customModel?: string;
+  /** Validated base URL of the custom OpenAI-compatible provider (https://host/v1). */
+  customBaseUrl?: string;
+  prefer?: "gemini" | "openrouter" | "custom";
 };
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -149,16 +155,19 @@ async function geminiVoice(cfg: VoiceConfig, prompt: string, fetcher: Fetcher, s
   return clean(text);
 }
 async function openrouterVoice(cfg: VoiceConfig, prompt: string, fetcher: Fetcher, signal: AbortSignal): Promise<string | null> {
-  const r = await fetcher('https://openrouter.ai/api/v1/chat/completions', {
+  const custom = cfg.prefer === 'custom';
+  const url = custom ? chatCompletionsUrl(cfg.customBaseUrl || '') : 'https://openrouter.ai/api/v1/chat/completions';
+  const r = await fetcher(url, {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + (cfg.openrouterKey || ''), 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer ' + ((custom ? cfg.customKey : cfg.openrouterKey) || ''), 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: cfg.openrouterModel || 'google/gemma-4-26b-a4b-it:free',
+      model: (custom ? cfg.customModel : cfg.openrouterModel) || 'google/gemma-4-26b-a4b-it:free',
       messages: [{ role: 'system', content: VOICE_SYSTEM }, { role: 'user', content: prompt }],
       max_tokens: 320,
       temperature: 0.9,
     }),
     signal,
+    redirect: 'error',
   });
   if (!r.ok) return null;
   const j = await r.json();
@@ -172,7 +181,7 @@ async function openrouterVoice(cfg: VoiceConfig, prompt: string, fetcher: Fetche
 export async function composeMorningVoice(cfg: VoiceConfig, facts: MorningFacts, fetcher: Fetcher = fetch): Promise<string | null> {
   const prompt = `این داده‌های تأییدشده‌ی امروز کاربره:\n\n${factsBlock(facts)}\n\nحالا یه معرفی صمیمی و پرانرژی برای صبح‌نامه بنویس.`;
   const signal = AbortSignal.timeout(7000); // One deadline for all provider attempts, not 7s each.
-  const or = cfg.openrouterKey ? () => openrouterVoice(cfg, prompt, fetcher, signal) : null;
+  const or = (cfg.prefer === 'custom' ? cfg.customKey && cfg.customModel && normalizeBaseUrl(cfg.customBaseUrl || '') : cfg.openrouterKey) ? () => openrouterVoice(cfg, prompt, fetcher, signal) : null;
   const gm = cfg.geminiKey ? () => geminiVoice(cfg, prompt, fetcher, signal) : null;
   const attempts: Array<() => Promise<string | null>> = [];
   if (cfg.prefer === "gemini") { if (gm) attempts.push(gm); if (or) attempts.push(or); }

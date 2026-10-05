@@ -1,5 +1,6 @@
 /** Nexa saeed-ai-v7 admin module. Source moved without behavioral rewrites. */
-import { ACCESS, ADMIN, GK, RK, TOKEN, admin, db } from "./state.ts";
+import { chatCompletionsUrl, isValidCustomModel, normalizeBaseUrl } from "../../_shared/openai-compat.ts";
+import { ACCESS, ADMIN, CK, GK, RK, TOKEN, admin, db } from "./state.ts";
 import { isAllowed } from "../../_shared/access.ts";
 import { clearBotConfigCache, readBotConfig } from "../../_shared/bot-config.ts";
 import { clearCapabilityCache } from "../../_shared/capabilities.ts";
@@ -63,7 +64,7 @@ export function cfg() {
 }
 
 export async function userCfg(id: number) {
-  return userAiContext(db, id, await cfg(), { gemini: GK, openrouter: RK });
+  return userAiContext(db, id, await cfg(), { gemini: GK, openrouter: RK, custom: CK });
 }
 
 export async function configSet(key: string, val: string | number) {
@@ -119,42 +120,48 @@ export async function flow(id: number, action: string) {
   if (error) throw Error("FLOW");
 }
 
-export async function testModel(provider: string, model: string) {
-  const r =
-    provider === "gemini"
-      ? await fetch(
-          "https://generativelanguage.googleapis.com/v1beta/models/" +
-            encodeURIComponent(model) +
-            ":generateContent",
-          {
-            method: "POST",
-            headers: {
-              "x-goog-api-key": GK,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: "Reply OK" }] }],
-              // Thinking models can spend a tiny budget on hidden thoughts and
-              // return no visible text, which looked like a broken model. 256
-              // tokens keep the connectivity probe reliable.
-              generationConfig: { maxOutputTokens: 256 },
-            }),
-            signal: AbortSignal.timeout(18000),
-          },
-        )
-      : await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: "Bearer " + RK,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: "user", content: "Reply OK" }],
-            max_tokens: 64,
-          }),
-          signal: AbortSignal.timeout(18000),
-        });
+export async function testModel(provider: string, model: string, customBaseUrl = "") {
+  let r: Response;
+  if (provider === "gemini") {
+    r = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" +
+        encodeURIComponent(model) +
+        ":generateContent",
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": GK,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Reply OK" }] }],
+          // Thinking models can spend a tiny budget on hidden thoughts and
+          // return no visible text, which looked like a broken model. 256
+          // tokens keep the connectivity probe reliable.
+          generationConfig: { maxOutputTokens: 256 },
+        }),
+        signal: AbortSignal.timeout(18000),
+      },
+    );
+  } else {
+    const custom = provider === "custom";
+    const base = custom ? normalizeBaseUrl(customBaseUrl) : null;
+    if (custom && (!base || !CK || !model)) throw Error("CUSTOM_CONFIG");
+    r = await fetch(custom ? chatCompletionsUrl(base!) : "https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + (custom ? CK : RK),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Reply OK" }],
+        max_tokens: 64,
+      }),
+      signal: AbortSignal.timeout(18000),
+      redirect: "error",
+    });
+  }
   if (!r.ok) throw Error("MODEL_" + r.status);
   const j = await r.json();
   if (
@@ -235,25 +242,42 @@ export async function adminInput(id: number, chat: number, text: string) {
     await send(chat, "✅ سهمیه اختصاصی ثبت شد.");
     return true;
   }
-  if (a !== "add_model" && a !== "add_openrouter_model") {
+  if (a === "add_custom_url") {
+    const baseUrl = normalizeBaseUrl(text);
+    if (!baseUrl) {
+      await send(chat, "🙈 آدرس باید یک https عمومی باشه، مثلاً https://api.openai.com/v1");
+      return true;
+    }
+    await configSet("custom_base_url", baseUrl);
+    await send(chat, "✅ آدرس Custom ثبت شد. حالا «✏️ مدل Custom» رو بزن و نام مدل رو بده." + (CK ? "" : "\n⚠️ هنوز CUSTOM_API_KEY در تنظیمات Edge Function ثبت نشده."));
+    return true;
+  }
+  if (a !== "add_model" && a !== "add_openrouter_model" && a !== "add_custom_model") {
     // Unknown or stale flow actions must fail closed; previously any leftover
     // value fell through and was saved as the OpenRouter model identifier.
     await send(chat, "🤔 این درخواست مدیریتی شناسایی نشد؛ از پنل مدیریت دوباره شروع کن.");
     return true;
   }
-  const provider = a === "add_model" ? "gemini" : "openrouter",
+  const provider = a === "add_model" ? "gemini" : a === "add_custom_model" ? "custom" : "openrouter",
     valid =
       provider === "gemini"
         ? /^[a-z][a-z0-9.-]{3,80}$/.test(text)
-        : /^[\w.~-]+\/[\w.:~-]{2,110}$/.test(text);
+        : provider === "custom"
+          ? isValidCustomModel(text)
+          : /^[\w.~-]+\/[\w.:~-]{2,110}$/.test(text);
   if (!valid) {
     await send(chat, "🙈 شناسه مدل درست نیست.");
     return true;
   }
+  const conf = await cfg();
+  if (provider === "custom" && !normalizeBaseUrl(conf.customBaseUrl)) {
+    await send(chat, "🙈 اول «🔗 آدرس Custom» رو ثبت کن.");
+    return true;
+  }
   await send(chat, "🔍 اتصال مدل رو امتحان می‌کنم…");
   try {
-    await testModel(provider, text);
-    await configSet(provider === "gemini" ? "model" : "openrouter_model", text);
+    await testModel(provider, text, conf.customBaseUrl);
+    await configSet(provider === "gemini" ? "model" : provider === "custom" ? "custom_model" : "openrouter_model", text);
     await send(chat, "✅ مدل تست و ثبت شد.");
   } catch {
     await send(chat, "🙈 مدل پاسخ نداد؛ تنظیم قبلی حفظ شد.");

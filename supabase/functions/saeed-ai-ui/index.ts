@@ -10,6 +10,8 @@ import { groundedSearch, searchMessage } from "./core/search.ts";
 import { allowed, equal, forward, hook, send, tg, withinRate } from "./core/transport.ts";
 import type { TgUpdate } from "../_shared/telegram.ts";
 import { validatePersonalApiKey } from "../_shared/user-ai.ts";
+import { isProvider } from "../_shared/bot-config.ts";
+import { isValidCustomModel, normalizeBaseUrl } from "../_shared/openai-compat.ts";
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 /**
@@ -97,32 +99,53 @@ async function startByok(userId: number) {
       inline_keyboard: [[
         { text: "🔵 OpenRouter", callback_data: "nexa:byok:openrouter" },
         { text: "🟢 Gemini", callback_data: "nexa:byok:gemini" },
+      ], [
+        { text: "🟣 OpenAI-compatible (سفارشی)", callback_data: "nexa:byok:custom" },
       ]],
     },
   });
 }
 
-async function chooseByokProvider(userId: number, provider: "gemini" | "openrouter") {
+async function saveOnboarding(userId: number, fields: Record<string, unknown>) {
   const { error } = await db.from("telegram_bot_onboarding").upsert({
     telegram_user_id: userId,
-    pending_action: "api_key",
-    provider,
     expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     updated_at: new Date().toISOString(),
+    ...fields,
   }, { onConflict: "telegram_user_id" });
   if (error) throw Error("ONBOARD_SAVE");
+}
+
+const KEY_NOTE =
+  "کلید فقط برای حساب خودت استفاده می‌شه و داخل Supabase Vault رمزگذاری می‌شه. " +
+  "بعد از دریافت هم سعی می‌کنم پیام حاوی کلید رو پاک کنم. بهتره یک کلید جدا و محدود برای Nexa بسازی.\n\n" +
+  "⏱ این مرحله ۱۰ دقیقه اعتبار داره.";
+
+async function chooseByokProvider(userId: number, provider: "gemini" | "openrouter") {
+  await saveOnboarding(userId, { pending_action: "api_key", provider, base_url: null, model: null });
+  await tg("sendMessage", {
+    chat_id: userId,
+    text: "🔐 حالا API Key " + (provider === "openrouter" ? "OpenRouter" : "Gemini") + " رو بفرست.\n\n" + KEY_NOTE,
+  });
+}
+
+/** Custom OpenAI-compatible: three steps (URL → model → key), each validated before moving on. */
+async function chooseByokCustom(userId: number) {
+  await saveOnboarding(userId, { pending_action: "custom_url", provider: "custom", base_url: null, model: null });
   await tg("sendMessage", {
     chat_id: userId,
     text:
-      "🔐 حالا API Key " + (provider === "openrouter" ? "OpenRouter" : "Gemini") + " رو بفرست.\n\n" +
-      "کلید فقط برای حساب خودت استفاده می‌شه و داخل Supabase Vault رمزگذاری می‌شه. " +
-      "بعد از دریافت هم سعی می‌کنم پیام حاوی کلید رو پاک کنم. بهتره یک کلید جدا و محدود برای Nexa بسازی.\n\n" +
+      "🟣 سرویس OpenAI-compatible شخصی\n\n" +
+      "مرحله ۱ از ۳: آدرس API رو بفرست (باید https باشه)، مثلاً:\n" +
+      "https://api.openai.com/v1\nhttps://api.groq.com/openai/v1\nhttps://api.deepseek.com/v1\n\n" +
       "⏱ این مرحله ۱۰ دقیقه اعتبار داره.",
   });
 }
 
 async function handleUnauthorized(update: TgUpdate, user: NonNullable<TgUpdate["message"]>["from"], chat: { id: number; type?: string }) {
   if (chat.type !== "private" || chat.id !== user.id) return;
+  // Strangers can trigger DB writes and outbound key/URL validation: flood-guard them too.
+  if (!(await withinRate(user.id, 10))) return;
 
   const { data: accessRow } = await db.from("telegram_bot_user_access")
     .select("enabled").eq("telegram_user_id", user.id).maybeSingle();
@@ -139,26 +162,60 @@ async function handleUnauthorized(update: TgUpdate, user: NonNullable<TgUpdate["
     if (action === "nexa:byok:start") return startByok(user.id);
     if (action === "nexa:byok:openrouter") return chooseByokProvider(user.id, "openrouter");
     if (action === "nexa:byok:gemini") return chooseByokProvider(user.id, "gemini");
+    if (action === "nexa:byok:custom") return chooseByokCustom(user.id);
     return sendAccessMenu(user.id);
   }
 
   const message = update.message;
   if (message?.text) {
     const { data: flow } = await db.from("telegram_bot_onboarding")
-      .select("pending_action,provider,expires_at")
+      .select("pending_action,provider,base_url,model,expires_at")
       .eq("telegram_user_id", user.id)
       .maybeSingle();
-    if (flow?.pending_action === "api_key" && Date.parse(flow.expires_at) > Date.now() &&
-        (flow.provider === "gemini" || flow.provider === "openrouter")) {
+    // Commands (/start, /help…) always escape an onboarding step instead of being read as input.
+    const live = flow && Date.parse(flow.expires_at) > Date.now() && !message.text.startsWith("/");
+    if (live && flow.provider === "custom" && flow.pending_action === "custom_url") {
+      const baseUrl = normalizeBaseUrl(message.text);
+      if (!baseUrl) {
+        await tg("sendMessage", {
+          chat_id: user.id,
+          text: "❌ آدرس معتبر نیست. باید یک آدرس https عمومی باشه، مثلاً https://api.openai.com/v1",
+        });
+        return;
+      }
+      await saveOnboarding(user.id, { pending_action: "custom_model", provider: "custom", base_url: baseUrl, model: null });
+      await tg("sendMessage", {
+        chat_id: user.id,
+        text: "✅ آدرس ثبت شد.\n\nمرحله ۲ از ۳: نام مدل رو دقیقاً همون‌طور که سرویس می‌خواد بفرست، مثلاً gpt-4o-mini",
+      });
+      return;
+    }
+    if (live && flow.provider === "custom" && flow.pending_action === "custom_model") {
+      const model = message.text.trim();
+      if (!isValidCustomModel(model)) {
+        await tg("sendMessage", { chat_id: user.id, text: "❌ نام مدل معتبر نیست؛ دوباره بفرست (بدون فاصله)." });
+        return;
+      }
+      await saveOnboarding(user.id, { pending_action: "api_key", provider: "custom", base_url: flow.base_url, model });
+      await tg("sendMessage", {
+        chat_id: user.id,
+        text: "✅ مدل ثبت شد.\n\nمرحله ۳ از ۳: API Key این سرویس رو بفرست.\n\n" + KEY_NOTE,
+      });
+      return;
+    }
+    if (live && flow.pending_action === "api_key" && isProvider(flow.provider)) {
       const key = message.text.trim();
       try {
         if (message.message_id)
           await tg("deleteMessage", { chat_id: user.id, message_id: message.message_id });
       } catch {}
-      if (!(await validatePersonalApiKey(flow.provider, key))) {
+      const custom = flow.provider === "custom" ? { baseUrl: String(flow.base_url || ""), model: String(flow.model || "") } : undefined;
+      if (!(await validatePersonalApiKey(flow.provider, key, fetch, custom))) {
         await tg("sendMessage", {
           chat_id: user.id,
-          text: "❌ این API Key اعتبارسنجی نشد. کلید درست رو دوباره بفرست یا /start رو بزن و مسیر دیگه‌ای انتخاب کن.",
+          text: flow.provider === "custom"
+            ? "❌ اتصال با این آدرس، مدل و کلید برقرار نشد. کلید درست رو دوباره بفرست، یا /start رو بزن و از اول (آدرس و مدل) شروع کن."
+            : "❌ این API Key اعتبارسنجی نشد. کلید درست رو دوباره بفرست یا /start رو بزن و مسیر دیگه‌ای انتخاب کن.",
         });
         return;
       }
@@ -166,6 +223,8 @@ async function handleUnauthorized(update: TgUpdate, user: NonNullable<TgUpdate["
         p_user_id: user.id,
         p_provider: flow.provider,
         p_api_key: key,
+        p_base_url: custom?.baseUrl ?? null,
+        p_model: custom?.model ?? null,
       });
       if (error || saved !== true) throw Error("USER_API_SAVE");
       await tg("sendMessage", {

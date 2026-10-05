@@ -58,7 +58,19 @@ END $$;
 INSERT INTO public.saeed_ai_reminders (telegram_user_id, telegram_chat_id, note, remind_at, repeat_rule) VALUES (42, 42, 'test', now() - interval '1 minute', 'daily');
 DO $$ DECLARE n int; BEGIN SELECT count(*) INTO n FROM public.saeed_ai_claim_due_reminders(10); ASSERT n = 1, 'reminder claim'; END $$;
 
-DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261004171500', 'schema version'; END $$;
+-- Personal custom OpenAI-compatible provider: URL + model are stored next to the key.
+DO $$ DECLARE r record; BEGIN
+  ASSERT public.nexa_user_api_set(77, 'custom', 'sk-custom-secret-123', 'https://api.example.com/v1', 'my-model') = true, 'custom set';
+  SELECT * INTO r FROM public.nexa_user_api_get(77);
+  ASSERT r.provider = 'custom' AND r.api_key = 'sk-custom-secret-123' AND r.base_url = 'https://api.example.com/v1' AND r.model = 'my-model', 'custom get';
+  ASSERT public.nexa_user_api_set(78, 'custom', 'sk-custom-secret-123', 'http://insecure.example.com', 'm') = false, 'custom requires https';
+  ASSERT public.nexa_user_api_set(78, 'custom', 'sk-custom-secret-123', 'https://api.example.com/v1', NULL) = false, 'custom requires model';
+  ASSERT public.nexa_user_api_set(79, 'gemini', 'gemini-secret-key-123') = true, 'builtin provider keeps 3-arg form';
+  INSERT INTO public.telegram_bot_config (setting_key, setting_value) VALUES ('custom_base_url', 'https://api.example.com/v1'), ('custom_model', 'my-model');
+  INSERT INTO public.saeed_ai_metrics (telegram_update_id, telegram_user_id, provider, model, status) VALUES (900001, 77, 'custom', 'my-model', 'success');
+END $$;
+
+DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261005120000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 DO $$ BEGIN INSERT INTO public.telegram_bot_preferences (telegram_user_id, keyboard_page) VALUES (43, 'guide'); END $$;
 ROLLBACK;

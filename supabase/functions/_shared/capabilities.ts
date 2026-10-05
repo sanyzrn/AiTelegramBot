@@ -11,7 +11,7 @@
  *    cached ~10 min per isolate. Router/unknown models resolve to
  *    "unknown" and are probed at runtime with graceful failure instead.
  */
-import type { BotConfig } from "./bot-config.ts";
+import type { ProviderCfg } from "./bot-config.ts";
 import type { Fetcher } from "./telegram.ts";
 
 export type Modality = "text" | "image" | "audio" | "pdf";
@@ -19,7 +19,7 @@ export type Modality = "text" | "image" | "audio" | "pdf";
 export type Support = boolean | "unknown";
 
 export type ModelCapabilities = {
-  provider: "gemini" | "openrouter";
+  provider: "gemini" | "openrouter" | "custom";
   model: string;
   input: Record<Modality, Support>;
   source: "static" | "api" | "error";
@@ -61,11 +61,20 @@ type OpenRouterModelMeta = {
 
 /** Resolves the input modalities of the given provider/model. Never throws. */
 export async function resolveCapabilities(
-  cfg: Pick<BotConfig, "provider" | "gemini" | "openrouter">,
+  cfg: ProviderCfg,
   opts: { fetcher?: Fetcher; timeoutMs?: number; now?: number } = {},
 ): Promise<ModelCapabilities> {
   if (cfg.provider === "gemini") {
     return { provider: "gemini", model: cfg.gemini, input: geminiInputSupport(cfg.gemini), source: "static" };
+  }
+  // A custom OpenAI-compatible server has no metadata API: modalities are probed at runtime.
+  if (cfg.provider === "custom") {
+    return {
+      provider: "custom",
+      model: String(cfg.custom || "").trim(),
+      input: { text: true, image: "unknown", audio: "unknown", pdf: "unknown" },
+      source: "static",
+    };
   }
   const model = String(cfg.openrouter || "").trim();
   const key = "openrouter:" + model;

@@ -7,6 +7,8 @@ import { escapeHtml } from "../../_shared/format.ts";
 export const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "",
   GK = Deno.env.get("GEMINI_API_KEY") || "",
   RK = Deno.env.get("OPENROUTER_API_KEY") || "",
+  /** Bot-wide key of the admin-configured custom OpenAI-compatible provider. */
+  CK = Deno.env.get("CUSTOM_API_KEY") || "",
   GH = Deno.env.get("GITHUB_TOKEN") || "",
   WEBAPP_URL = /^https:\/\//.test(Deno.env.get("WEBAPP_URL") || "") ? Deno.env.get("WEBAPP_URL")! : "",
   TTS_MODEL = Deno.env.get("GEMINI_TTS_MODEL") || "",
@@ -36,8 +38,8 @@ export const tg = createTg(TOKEN);
 /** At least one AI provider key must exist; the ACTIVE provider (from
  *  telegram_bot_config) is the only one that is ever called. OpenRouter-only
  *  deployments no longer require a Gemini key to boot. */
-export const ready = () => !!(client && TOKEN && (GK || RK) && ADMIN),
+export const ready = () => !!(client && TOKEN && (GK || RK || CK) && ADMIN),
   admin = (id: unknown) => isAdmin(ACCESS, id),
   reply = (x: unknown, status = 200) => Response.json(x, { status, headers: { "Cache-Control": "no-store" } }),
   esc = escapeHtml,
-  keys = { gemini: GK, openrouter: RK };
+  keys = { gemini: GK, openrouter: RK, custom: CK };

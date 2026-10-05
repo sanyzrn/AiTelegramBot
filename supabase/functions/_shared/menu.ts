@@ -115,8 +115,9 @@ export const MENU: Record<string, string[][]> = {
     ["🛡 مدیریت", "🏠 خانه"],
   ],
   models: [
-    ["🟢 Gemini", "🔵 OpenRouter"],
-    ["✏️ مدل Gemini", "✏️ مدل OpenRouter"],
+    ["🟢 Gemini", "🔵 OpenRouter", "🟣 Custom"],
+    ["✏️ مدل Gemini", "✏️ مدل OpenRouter", "✏️ مدل Custom"],
+    ["🔗 آدرس Custom"],
     ["↩️ پیش‌فرض Gemini", "↩️ پیش‌فرض OpenRouter"],
     ["🛡 مدیریت", "🏠 خانه"],
   ],

@@ -4,14 +4,14 @@
  * OpenRouter's web plugin (with citation annotations); Gemini keeps Google
  * Search grounding. Never invent sources; fail loudly on missing ones.
  */
-import type { BotConfig } from "./bot-config.ts";
+import type { ProviderCfg } from "./bot-config.ts";
 import type { Fetcher } from "./telegram.ts";
 
 export type GroundedResult = {
   text: string;
   usage: { input?: number | null; output?: number | null };
   model: string;
-  provider: "gemini" | "openrouter";
+  provider: "gemini" | "openrouter" | "custom";
 };
 
 type Part = { text?: string; thought?: boolean };
@@ -152,10 +152,13 @@ async function generateWithOpenRouterWeb(
 export async function groundedSearch(
   query: string,
   system: string,
-  cfg: Pick<BotConfig, "provider" | "gemini" | "openrouter" | "search">,
-  keys: { gemini: string; openrouter?: string },
+  cfg: ProviderCfg,
+  keys: { gemini: string; openrouter?: string; custom?: string },
   fetcher: Fetcher = fetch,
 ): Promise<GroundedResult> {
+  // A generic OpenAI-compatible server has no standard web-search tool, so no
+  // verifiable sources can exist: refuse instead of presenting an unsourced answer.
+  if (cfg.provider === "custom") throw Error("SEARCH_UNSUPPORTED");
   if (cfg.provider === "openrouter") {
     if (!keys.openrouter) throw Error("AI_KEY_OPENROUTER");
     const model = String(cfg.openrouter || "").trim().replace(/:online$/, "");
@@ -243,6 +246,8 @@ export function searchMessage(reason: string): string {
     return "🌐 کلید سرویس جست‌وجو اعتبارسنجی نشد؛ تنظیمات API باید بررسی بشه. ❤️";
   if (/SEARCH_HTTP_(400|404)/.test(reason))
     return "🌐 مدل جست‌وجو در API پذیرفته نشد؛ نام مدل و دسترسی جست‌وجو باید بررسی بشه. ❤️";
+  if (/SEARCH_UNSUPPORTED/.test(reason))
+    return "🌐 سرویس OpenAI-compatible شخصی/سفارشی جست‌وجوی وب با منبع نداره؛ برای ابزار «آنلاین» از Gemini یا OpenRouter استفاده کن. ❤️";
   if (/SEARCH_NO_SOURCES/.test(reason))
     return "🌐 مدل پاسخ داد، اما لینک منبع معتبر برنگردوند. برای اینکه منبع ساختگی ندم، نتیجه رو منتشر نکردم. دوباره با سؤال دقیق‌تر امتحان کن. ❤️";
   if (/SEARCH_EMPTY/.test(reason))
