@@ -18,3 +18,7 @@ verify_jwt = false
 [functions.saeed-ai-webapp]
 # Authenticated by Telegram-signed Mini App initData (HMAC with the bot token).
 verify_jwt = false
+
+[functions.nexa-admin]
+# Telegram Login Widget HMAC + short-lived signed admin session; no JWT bearer.
+verify_jwt = false
