@@ -78,7 +78,7 @@ test('personal custom credentials carry their own URL and model and never reuse 
   assert.equal(ctx.config.customBaseUrl, 'https://mine.example.com/v1');
   assert.deepEqual(ctx.keys, { gemini: '', openrouter: '', custom: 'personal-secret-key' });
 
-  const broken = { async rpc() { return { data: [{ provider: 'custom', api_key: 'personal-secret-key', base_url: 'http://127.0.0.1', model: 'mine' }], error: null }; } };
+  const broken = { async rpc(name) { return name === 'nexa_admin_api_active' ? { data: [], error: null } : { data: [{ provider: 'custom', api_key: 'personal-secret-key', base_url: 'http://127.0.0.1', model: 'mine' }], error: null }; } };
   const fallback = await userAiContext(broken, 5, base, KEYS);
   assert.equal(fallback.personal, false, 'an unsafe stored URL is never called');
 });
