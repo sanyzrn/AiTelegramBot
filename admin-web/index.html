@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#111827">
+  <title>Nexa Admin — مدیریت نکسا</title>
+  <meta name="description" content="Nexa's private administration console">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <main id="login" class="login-view">
+    <div class="login-brand"><span class="logo-mark">✦</span> NEXA <span>ADMIN</span></div>
+    <section class="login-card">
+      <div class="login-icon" aria-hidden="true">✦</div>
+      <p class="eyebrow">NEXA CONTROL CENTER</p>
+      <h1>پنل مدیریت نکسا</h1>
+      <p class="muted">همه‌چیز تحت کنترل، از یک جای امن و ساده.</p>
+      <div id="tgLogin" class="tg-login"><span class="spinner"></span> در حال آماده‌سازی ورود تلگرام...</div>
+      <p class="micro">ورود فقط برای مدیر اصلی ثبت‌شده در بات مجاز است.</p>
+    </section>
+    <p class="copyright">© Nexa · Private administration console</p>
+  </main>
+
+  <div id="console" class="console hidden">
+    <aside class="sidebar">
+      <a class="brand" href="./" aria-label="Nexa Admin"><span class="logo-mark">✦</span><span>NEXA <small>ADMIN</small></span></a>
+      <div class="nav-label">مدیریت</div>
+      <nav aria-label="ناوبری">
+        <button type="button" class="nav-link active" data-target="overview"><span class="nav-icon">◫</span> نمای کلی</button>
+        <button type="button" class="nav-link" data-target="users"><span class="nav-icon">♙</span> کاربران <span id="navCount" class="mini-count">۰</span></button>
+        <button type="button" class="nav-link" data-target="providers"><span class="nav-icon">✳</span> هوش مصنوعی و API</button>
+      </nav>
+      <div class="side-bottom">
+        <div class="side-status"><span class="status-dot"></span> اتصال امن با Supabase</div>
+        <span class="version">NEXA ADMIN · 1.0</span>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="crumb"><span class="desktop-crumb">Workspace</span><span class="slash">/</span><b id="pageTitle">نمای کلی</b></div>
+        <div class="top-actions">
+          <span class="private-pill"><span class="status-dot"></span> Private</span>
+          <button type="button" id="refresh" class="round-button" title="بروزرسانی">↻</button>
+          <button type="button" id="logout" class="outline-button">خروج</button>
+        </div>
+      </header>
+      <div class="content">
+        <section id="overview" class="panel active" aria-label="نمای کلی">
+          <div class="headline"><div><div class="eyebrow">OVERVIEW / LIVE DATA</div><h1>داشبورد نکسا <span class="headline-spark">✦</span></h1><p>نبض کاربران و سرویس‌های هوش مصنوعی، در یک نگاه.</p></div><span class="today-tag" id="todayTag">—</span></div>
+          <div class="stats">
+            <article class="stat-card"><span class="stat-icon">♧</span><div class="stat-label">کاربران شناخته‌شده</div><div class="stat-num" id="totalUsers">—</div><div class="stat-sub">کاربر در سیستم</div></article>
+            <article class="stat-card"><span class="stat-icon">↗</span><div class="stat-label">درخواست‌های ۲۴ ساعت</div><div class="stat-num" id="totalRequests">—</div><div class="stat-sub">کل درخواست‌های ثبت‌شده</div></article>
+            <article class="stat-card"><span class="stat-icon">✳</span><div class="stat-label">توکن‌های پردازش‌شده</div><div class="stat-num" id="totalTokens">—</div><div class="stat-sub">در ۲۴ ساعت گذشته</div></article>
+            <article class="stat-card"><span class="stat-icon">✓</span><div class="stat-label">پاسخ‌های موفق</div><div class="stat-num" id="totalSuccess">—</div><div class="stat-sub">بر اساس گزارش‌ها</div></article>
+          </div>
+          <div class="overview-grid">
+            <article class="surface"><div class="surface-heading"><h2>وضعیت ارائه‌دهنده‌ها</h2><span class="micro">کلیدهای سرور</span></div><div id="providerSummary" class="provider-summary"></div></article>
+            <article class="surface"><div class="surface-heading"><h2>آخرین کاربران فعال</h2><button class="link-action" data-go="users" type="button">مشاهده همه ←</button></div><div id="recentUsers" class="recent-users"></div></article>
+          </div>
+        </section>
+        <section id="users" class="panel" aria-label="کاربران">
+          <div class="headline"><div><div class="eyebrow">PEOPLE / ACCESS</div><h1>مدیریت کاربران</h1><p>دسترسی‌ها، سقف مصرف و API شخصی هر کاربر.</p></div><button id="addUser" class="primary-button" type="button">＋ افزودن کاربر</button></div>
+          <div class="surface table-surface">
+            <div class="table-controls">
+              <label class="search-wrap"><span>⌕</span><input id="userSearch" type="search" placeholder="جستجو با Chat ID..." aria-label="جستجوی کاربران"></label>
+              <select id="userFilter" aria-label="فیلتر کاربران"><option value="all">همه کاربران</option><option value="active">مجاز</option><option value="blocked">مسدود</option><option value="byok">API شخصی</option></select>
+            </div>
+            <div class="table-scroll"><table><thead><tr><th>شناسه کاربر</th><th>دسترسی</th><th>ارائه‌دهنده</th><th>درخواست امروز</th><th>محدودیت</th><th></th></tr></thead><tbody id="usersTable"><tr><td colspan="6">در حال بارگذاری...</td></tr></tbody></table></div>
+            <div id="tableFoot" class="table-foot"></div>
+          </div>
+        </section>
+        <section id="providers" class="panel" aria-label="هوش مصنوعی و API">
+          <div class="headline"><div><div class="eyebrow">AI INFRASTRUCTURE / CONFIG</div><h1>هوش مصنوعی و API</h1><p>انتخاب Provider، مدل‌ها و محدودیت پیش‌فرض بات.</p></div></div>
+          <div class="surface settings-surface">
+            <div class="setting-heading"><div class="setting-icon">✳</div><div><h2>تنظیمات مدل و سرویس</h2><p class="muted">تغییرات پس از ذخیره، روی بات فعال اعمال می‌شود.</p></div></div>
+            <div class="settings-grid">
+              <label><span>ارائه‌دهنده اصلی بات</span><select id="settingProvider"><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / OpenAI-compatible</option></select></label>
+              <label><span>مدل Gemini</span><input id="settingGemini" type="text" spellcheck="false" placeholder="gemini-3.5-flash-lite"></label>
+              <label><span>مدل OpenRouter</span><input id="settingRouter" type="text" spellcheck="false" placeholder="google/gemma-4-26b-a4b-it:free"></label>
+              <label><span>مدل سفارشی</span><input id="settingCustomModel" type="text" spellcheck="false" placeholder="model-id"></label>
+              <label class="wide"><span>آدرس API سفارشی (HTTPS)</span><input id="settingCustomUrl" type="url" dir="ltr" spellcheck="false" placeholder="https://api.example.com/v1"></label>
+              <label><span>سقف روزانه پیش‌فرض (۰ = نامحدود)</span><input id="settingLimit" type="number" min="0" max="1000"></label>
+              <label class="toggle-line"><span>جستجوی اینترنتی چت Gemini</span><input id="settingSearch" type="checkbox"></label>
+            </div>
+            <div class="settings-footer"><span class="small-muted">کلیدهای API سرور فقط در Supabase Secrets نگه‌داری می‌شوند و اینجا نمایش داده نمی‌شوند.</span><button id="saveSettings" class="primary-button" type="button">ذخیره تنظیمات</button></div>
+          </div>
+          <div class="notice"><span>i</span><div><b>API شخصی کاربران</b><p>کلید شخصی هر کاربر داخل Supabase Vault باقی می‌ماند. از بخش «کاربران» می‌توانید کلید را فعال/غیرفعال یا کامل لغو کنید؛ امکان مشاهده مقدار کلید وجود ندارد.</p></div></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="userDialog" class="edit-dialog">
+    <form method="dialog" id="userForm">
+      <div class="dialog-head"><div><div class="eyebrow">USER MANAGEMENT</div><h2 id="dialogTitle">ویرایش کاربر</h2></div><button value="cancel" aria-label="بستن" class="close-dialog" type="submit">×</button></div>
+      <label>Chat ID<input id="editId" inputmode="numeric" pattern="[0-9]+" required></label>
+      <label>وضعیت دسترسی<select id="editAccess"><option value="inherit">پیش‌فرض / API شخصی</option><option value="enabled">مجاز با کلید اصلی</option><option value="disabled">مسدود</option></select></label>
+      <label>محدودیت روزانه<input id="editLimit" type="number" min="0" max="1000" placeholder="پیش‌فرض سیستم"></label>
+      <p class="small-muted">برای کاربران با API شخصی فعال، محدودیت روزانه اعمال نمی‌شود. وضعیت «مسدود» همیشه اولویت دارد.</p>
+      <div id="personalControls" class="personal-controls hidden"><div id="personalInfo" class="personal-info"></div><button type="button" id="togglePersonal" class="outline-button">غیرفعال‌کردن API شخصی</button><button type="button" id="revokePersonal" class="danger-button">لغو کامل کلید شخصی</button></div>
+      <div class="dialog-actions"><button value="cancel" type="submit" class="outline-button">انصراف</button><button id="saveUser" type="button" class="primary-button">ذخیره کاربر</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
