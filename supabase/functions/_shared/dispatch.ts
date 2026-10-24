@@ -126,6 +126,9 @@ export async function morningVoiceConfig(
     let customKey = deps.keys?.custom || "";
     let customModel = x.get("custom_model") || "";
     let customBaseUrl = x.get("custom_base_url") || "";
+    let geminiModel = x.get("model") || "";
+    let openrouterModel = x.get("openrouter_model") || "";
+    let personalActive = false;
 
     if (userId && Number.isSafeInteger(userId) && userId > 0) {
       try {
@@ -134,6 +137,7 @@ export async function morningVoiceConfig(
         const provider = isProvider(row?.provider) ? row.provider : null;
         const key = typeof row?.api_key === "string" ? row.api_key.trim() : "";
         if (!personalError && provider && key) {
+          personalActive = true;
           prefer = provider;
           geminiKey = provider === "gemini" ? key : "";
           openrouterKey = provider === "openrouter" ? key : "";
@@ -145,14 +149,34 @@ export async function morningVoiceConfig(
         // No personal credential (or an older test DB): use the bot-wide config.
       }
     }
+    if (!personalActive) {
+      // Morning briefings must use the same selected server credential as chat.
+      // BYOK users above never see or consume this bot-owned pool.
+      const { data: chosen, error: chosenError } = await deps.db.rpc("nexa_admin_api_active");
+      if (chosenError) throw Error("BOT_API_POOL_READ");
+      const row = Array.isArray(chosen) ? chosen[0] : chosen;
+      if (row) {
+        const provider = isProvider(row.provider) ? row.provider : null;
+        const key = typeof row.api_key === "string" ? row.api_key.trim() : "";
+        if (!provider || !key || !String(row.model || "").trim()) throw Error("BOT_API_POOL_INVALID");
+        prefer = provider;
+        geminiKey = provider === "gemini" ? key : "";
+        openrouterKey = provider === "openrouter" ? key : "";
+        customKey = provider === "custom" ? key : "";
+        if (provider === "gemini") geminiModel = row.model;
+        if (provider === "openrouter") openrouterModel = row.model;
+        customModel = provider === "custom" ? String(row.model) : "";
+        customBaseUrl = provider === "custom" ? String(row.base_url || "") : "";
+      }
+    }
     // Provider-first: the active provider is the only one ever called.
     if (prefer === "custom") { geminiKey = ""; openrouterKey = ""; }
 
     return {
       geminiKey: geminiKey || undefined,
       openrouterKey: openrouterKey || undefined,
-      geminiModel: x.get("model") || undefined,
-      openrouterModel: x.get("openrouter_model") || undefined,
+      geminiModel: geminiModel || undefined,
+      openrouterModel: openrouterModel || undefined,
       customKey: customKey || undefined,
       customModel: customModel || undefined,
       customBaseUrl: customBaseUrl || undefined,

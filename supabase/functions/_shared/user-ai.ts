@@ -2,6 +2,7 @@
 import { isProvider, type BotConfig, type Provider } from "./bot-config.ts";
 import { chatCompletionsUrl, normalizeBaseUrl } from "./openai-compat.ts";
 import type { AiKeys } from "./ai.ts";
+import { resolveBotAi } from "./admin-api-pool.ts";
 import type { Fetcher } from "./telegram.ts";
 
 export type UserAiContext = {
@@ -20,24 +21,25 @@ export async function userAiContext(
   base: BotConfig,
   serverKeys: AiKeys,
 ): Promise<UserAiContext> {
+  const fallback = async (): Promise<UserAiContext> => ({ ...(await resolveBotAi(db, base, serverKeys)), personal: false });
   try {
     const { data, error } = await db.rpc("nexa_user_api_get", { p_user_id: userId });
     if (error) {
       console.error("USER_API_READ", error.code || "RPC");
-      return { config: base, keys: serverKeys, personal: false };
+      return fallback();
     }
     const row = (Array.isArray(data) ? data[0] : data) as
       { provider?: unknown; api_key?: unknown; base_url?: unknown; model?: unknown } | null;
     const provider = isProvider(row?.provider) ? row!.provider as Provider : null;
     const key = typeof row?.api_key === "string" ? row.api_key.trim() : "";
-    if (!provider || !key) return { config: base, keys: serverKeys, personal: false };
+    if (!provider || !key) return fallback();
 
     if (provider === "custom") {
       // A personal custom endpoint carries its own URL and model; the bot-wide
       // custom settings are never mixed in (they may point to another account).
       const baseUrl = normalizeBaseUrl(String(row?.base_url || ""));
       const model = String(row?.model || "").trim();
-      if (!baseUrl || !model) return { config: base, keys: serverKeys, personal: false };
+      if (!baseUrl || !model) return fallback();
       return {
         config: { ...base, provider, custom: model, customBaseUrl: baseUrl },
         keys: { gemini: "", openrouter: "", custom: key },
@@ -51,8 +53,11 @@ export async function userAiContext(
         : { gemini: "", openrouter: key, custom: "" },
       personal: true,
     };
-  } catch {
-    return { config: base, keys: serverKeys, personal: false };
+  } catch (e) {
+    // Errors fetching personal keys may fall back to the bot's selected credential,
+    // but a broken global credential must fail closed instead of leaking legacy keys.
+    if (e instanceof Error && e.message.startsWith("BOT_API_POOL_")) throw e;
+    return fallback();
   }
 }
 

@@ -175,7 +175,7 @@ test('briefing: local-time reminders, riddle spoiler and optional voice, fetched
       { telegram_user_id: 6, telegram_chat_id: 6, enabled: true, timezone: 'Asia/Tehran', voice: false },
     ],
     saeed_ai_tasks: [{ telegram_user_id: 5, task: 'تماس با بانک', done: false }],
-  }, { rpc: { saeed_ai_claim_briefings: () => ({ data: [{ telegram_user_id: 5, telegram_chat_id: 5, local_day: '2026-09-23' }, { telegram_user_id: 6, telegram_chat_id: 6, local_day: '2026-09-23' }], error: null }) } });
+  }, { rpc: { nexa_admin_api_active: () => ({ data: [], error: null }), saeed_ai_claim_briefings: () => ({ data: [{ telegram_user_id: 5, telegram_chat_id: 5, local_day: '2026-09-23' }, { telegram_user_id: 6, telegram_chat_id: 6, local_day: '2026-09-23' }], error: null }) } });
   const spoken = [];
   const { d, sent, html } = deps(db, { speak: async (chat, text) => spoken.push({ chat, text }), fetcher: async () => { fetches++; return new Response('{}', { status: 503 }); } });
   const r = await dispatchBriefings(d);

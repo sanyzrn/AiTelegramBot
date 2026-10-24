@@ -17,7 +17,7 @@
   };
   async function call(action, data = {}, token = state.token) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), action.startsWith("credential_") ? 30000 : 15000);
     try {
       const r = await fetch(API, {
         method: "POST",
@@ -89,6 +89,7 @@
       drawStats();
       drawUsers();
       drawSettings();
+      drawCredentials();
     } catch (e) {
       toast(e.message || "مشکل اتصال", true);
     } finally { $("refresh").disabled = false; }
@@ -112,8 +113,10 @@
       const row = element("div", "provider-line");
       const box = element("div");
       box.append(element("strong", "", title), element("span", "", " · " + description));
-      const ok = Boolean(d.providers[key]);
-      const stat = element("span", "mini-status" + (ok ? " good" : ""), ok ? "متصل" : "بدون کلید");
+      const count=(d.credentials||[]).filter(k=>k.provider===key).length;
+      const ok = Boolean(d.providers[key] || count);
+      const stat = element("span", "mini-status" + (ok ? " good" : ""), ok
+        ? (count ? fa(count)+" کلید ذخیره‌شده" : "Secrets سرور") : "بدون کلید");
       row.append(box, stat); dest.append(row);
     }
     const recent = $("recentUsers"); recent.replaceChildren();
@@ -174,16 +177,178 @@
     }
     $("tableFoot").textContent = fa(users.length) + " کاربر نمایش داده شده است.";
   }
+  const providerNames = {
+    gemini: "Google Gemini", openrouter: "OpenRouter", custom: "Custom API",
+  };
+  const providerIcons = { gemini: "✦", openrouter: "◈", custom: "⌘" };
+  const modelDefaults = {
+    gemini: "gemini-3.5-flash-lite",
+    openrouter: "google/gemma-4-26b-a4b-it:free",
+    custom: "",
+  };
+  let credentialEdit = null;
+
   function drawSettings() {
     const s=state.data.settings;
-    $("settingProvider").value=s.provider;
-    $("settingGemini").value=s.model;
-    $("settingRouter").value=s.openrouter_model;
-    $("settingCustomModel").value=s.custom_model;
-    $("settingCustomUrl").value=s.custom_base_url;
     $("settingLimit").value=s.daily_limit;
     $("settingSearch").checked=s.chat_search;
   }
+
+  function actionButton(label, className, handler, disabled=false) {
+    const b=element("button",className,label);
+    b.type="button";
+    b.disabled=disabled;
+    if(handler) b.addEventListener("click",handler);
+    return b;
+  }
+
+  function drawCredentials() {
+    const d=state.data, all=d.credentials||[], active=all.find(k=>k.is_active);
+    const legacy=!active;
+    const chosenProvider=active?.provider||d.settings.provider;
+    const chosenName=active?.label || ("کلید Supabase Secrets · "+providerNames[chosenProvider]);
+    $("activeApiName").textContent=chosenName;
+    $("activeApiMeta").textContent=active
+      ? providerNames[active.provider]+" · "+active.model+" · از Vault"
+      : "کلید قدیمی سرور · "+(d.settings[chosenProvider==="gemini"?"model":chosenProvider==="openrouter"?"openrouter_model":"custom_model"]||"");
+    const root=$("credentialGroups");
+    root.replaceChildren();
+    for (const [provider,desc] of [
+      ["gemini","مستقیم از Google AI Studio"],
+      ["openrouter","کلیدهای OpenRouter و مدل‌های مختلف"],
+      ["custom","هر سرویس سازگار با OpenAI"],
+    ]) {
+      const group=element("section","provider-card");
+      const head=element("div","provider-card-header");
+      const brand=element("div","provider-brand");
+      brand.append(element("div","provider-logo "+provider,providerIcons[provider]));
+      const txt=element("div");
+      const title=element("h3","",providerNames[provider]);
+      const sub=element("p","",desc);
+      txt.append(title,sub);
+      brand.append(txt);
+      head.append(brand,actionButton("＋ افزودن API","credential-add",()=>openCredential(provider)));
+      group.append(head);
+      const list=element("div","credential-list");
+      const keys=all.filter(k=>k.provider===provider);
+      // Existing environment keys remain usable; they are never copied into the browser.
+      if(d.providers[provider]) {
+        const model=d.settings[provider==="gemini"?"model":provider==="openrouter"?"openrouter_model":"custom_model"];
+        const row=makeCredentialRow({
+          label:"کلید فعلی Supabase Secrets",model:model||"تنظیمات سرور",
+          provider,legacy:true,is_active:legacy&&chosenProvider===provider
+        });
+        const buttons=row.querySelector(".credential-buttons");
+        buttons.append(actionButton("استفاده برای بات","primary-button",()=>{
+          changeActive("credential_use_legacy",{provider},"کلید سرور");
+        },legacy&&chosenProvider===provider));
+        list.append(row);
+      }
+      for(const key of keys) {
+        const row=makeCredentialRow(key);
+        const buttons=row.querySelector(".credential-buttons");
+        buttons.append(
+          actionButton(key.is_active?"در حال استفاده":"فعال‌کردن","primary-button",()=>changeActive("credential_activate",{id:key.id},key.label),key.is_active),
+          actionButton("تست","outline-button",()=>testCredential(key)),
+          actionButton("ویرایش","outline-button",()=>openCredential(provider,key)),
+          actionButton("حذف","danger-button",()=>deleteCredential(key),key.is_active)
+        );
+        list.append(row);
+      }
+      if(!keys.length && !d.providers[provider]){
+        list.append(element("div","credential-empty","هنوز کلیدی برای این سرویس نداری. روی «افزودن API» بزن."));
+      }
+      group.append(list);
+      const foot=element("div","provider-legend",
+        fa(keys.length)+" کلید ذخیره‌شده در Vault"+(d.providers[provider]?" · یک کلید قدیمی در Secrets":""));
+      group.append(foot);
+      root.append(group);
+    }
+  }
+
+  function makeCredentialRow(k) {
+    const row=element("div","credential-row"+(k.is_active?" is-active":""));
+    const main=element("div","credential-row-main");
+    const title=element("div","credential-label");
+    title.append(element("strong","",k.label));
+    if(k.is_active) title.append(element("span","pill allowed","● پیش‌فرض فعال"));
+    else if(k.legacy) title.append(element("span","pill","قدیمی"));
+    const meta=element("div","credential-meta",k.model+(k.base_url?" · "+k.base_url:""));
+    main.append(title,meta);
+    row.append(main,element("div","credential-buttons"));
+    return row;
+  }
+
+  function openCredential(provider,key=null) {
+    credentialEdit=key;
+    $("credentialDialogTitle").textContent=key?"ویرایش API":"افزودن API جدید";
+    $("credentialProviderName").textContent=providerNames[provider];
+    $("credentialDialog").dataset.provider=provider;
+    $("credentialLabel").value=key?.label||"";
+    $("credentialModel").value=key?.model||modelDefaults[provider];
+    $("credentialUrlWrap").classList.toggle("hidden",provider!=="custom");
+    $("credentialUrl").value=key?.base_url||"";
+    $("credentialKey").value="";
+    $("credentialKey").type="password";
+    $("revealCredentialKey").textContent="نمایش";
+    $("credentialKeyHint").textContent=key
+      ?"برای حفظ کلید فعلی این کادر را خالی بگذار؛ برای تعویض، کلید جدید وارد کن."
+      :"اتصال کلید قبل از ذخیره تست می‌شود و مقدارش هرگز در لیست نمایش داده نمی‌شود.";
+    $("credentialDialog").showModal();
+  }
+
+  async function saveCredential() {
+    const provider=$("credentialDialog").dataset.provider;
+    const label=$("credentialLabel").value.trim();
+    const model=$("credentialModel").value.trim();
+    const base_url=$("credentialUrl").value.trim();
+    const api_key=$("credentialKey").value.trim();
+    if(!label||label.length>60||!model||model.length>120||
+       (provider==="custom"&&!base_url.startsWith("https://"))||
+       (!credentialEdit&&!api_key)) return toast("نام، مدل، آدرس و کلید را بررسی کن.",true);
+    const button=$("saveCredential");
+    button.disabled=true;button.textContent="در حال بررسی و ذخیره...";
+    try {
+      const result=await call("credential_save",{
+        id:credentialEdit?.id||null,provider,label,model,
+        base_url:provider==="custom"?base_url:null,api_key,
+      });
+      $("credentialKey").value="";
+      if(!result.ok) throw Error("ذخیره انجام نشد");
+      $("credentialDialog").close();
+      toast("API ذخیره شد. هر زمان بخوای می‌تونی فعالش کنی.");
+      await load();
+    }catch(e){toast(e.message||"ثبت API ناموفق بود",true)}
+    finally{button.disabled=false;button.textContent="تست و ذخیره"}
+  }
+
+  async function changeActive(action,payload,label){
+    if(!confirm("«"+label+"» به‌عنوان سرویس اصلی نکسا فعال شود؟"))return;
+    try{
+      const r=await call(action,payload);
+      if(!r.ok)throw Error("تغییر پیش‌فرض انجام نشد");
+      toast("سرویس فعال بات بروزرسانی شد.");
+      await load();
+    }catch(e){toast(e.message||"تغییر ناموفق",true)}
+  }
+  async function testCredential(key){
+    toast("در حال بررسی اتصال API...");
+    try{
+      const r=await call("credential_test",{id:key.id});
+      toast(r.ok?"اتصال «"+key.label+"» سالم است.":"اتصال برقرار نشد",!r.ok);
+    }catch(e){toast(e.message||"تست ناموفق بود",true)}
+  }
+  async function deleteCredential(key){
+    if(key.is_active)return toast("ابتدا کلید فعال دیگری انتخاب کن.",true);
+    if(!confirm("کلید «"+key.label+"» از Vault برای همیشه حذف شود؟"))return;
+    try{
+      const r=await call("credential_delete",{id:key.id,confirm:"DELETE"});
+      if(!r.ok)throw Error("کلید حذف نشد");
+      toast("کلید از Vault حذف شد.");
+      await load();
+    }catch(e){toast(e.message||"حذف ناموفق",true)}
+  }
+
   function editUser(u = null) {
     state.selected=u;
     $("dialogTitle").textContent=u?"مدیریت کاربر " + u.id:"افزودن کاربر";
@@ -238,27 +403,21 @@
     } catch(e) {toast(e.message||"حذف ناموفق",true)}
   }
   async function saveSettings() {
-    if(!state.data) return;
+    if(!state.data)return;
     const s=state.data.settings;
     const edits=[
-      ["model",$("settingGemini").value.trim(),s.model],
-      ["openrouter_model",$("settingRouter").value.trim(),s.openrouter_model],
-      ["custom_model",$("settingCustomModel").value.trim(),s.custom_model],
-      ["custom_base_url",$("settingCustomUrl").value.trim(),s.custom_base_url],
       ["daily_limit",$("settingLimit").value,s.daily_limit],
       ["chat_search",$("settingSearch").checked?"on":"off",s.chat_search?"on":"off"],
-      ["provider",$("settingProvider").value,s.provider], // switch last
-    ].filter(([key,value,prev])=>String(value)!==String(prev));
-    if(!edits.length) return toast("تنظیمات تغییری نکرده است.");
-    if(!confirm("تغییرات هوش مصنوعی روی همه کاربران بات اعمال می‌شود. ذخیره کنم؟")) return;
-    const btn=$("saveSettings");btn.disabled=true;btn.textContent="در حال ذخیره...";
-    try {
-      for(const [key,value] of edits) await call("save_setting",{key,value});
-      toast("تنظیمات ذخیره شد.");
-      await load();
-    }catch(e){toast(e.message||"ذخیره ناموفق بود",true);await load()}
-    finally{btn.disabled=false;btn.textContent="ذخیره تنظیمات"}
+    ].filter(([,value,prev])=>String(value)!==String(prev));
+    if(!edits.length)return toast("تنظیمات تغییری نکرده است.");
+    const btn=$("saveSettings");btn.disabled=true;
+    try{
+      for(const [key,value] of edits)await call("save_setting",{key,value});
+      toast("تنظیمات عمومی ذخیره شد.");await load();
+    }catch(e){toast(e.message||"خطا در ذخیره",true)}
+    finally{btn.disabled=false}
   }
+
   function go(tab) {
     state.tab=tab;
     for(const b of document.querySelectorAll("[data-target]")) b.classList.toggle("active",b.dataset.target===tab);
@@ -277,5 +436,11 @@
   $("togglePersonal").addEventListener("click",togglePersonal);
   $("revokePersonal").addEventListener("click",revokePersonal);
   $("saveSettings").addEventListener("click",saveSettings);
+  $("saveCredential").addEventListener("click",saveCredential);
+  $("revealCredentialKey").addEventListener("click",()=>{
+    const input=$("credentialKey");
+    input.type=input.type==="password"?"text":"password";
+    $("revealCredentialKey").textContent=input.type==="password"?"نمایش":"پنهان";
+  });
   (state.token ? openApp() : initWidget()).catch((e)=>{toast(e.message||"اتصال برقرار نیست",true);showWidgetError()});
 })();
