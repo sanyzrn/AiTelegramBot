@@ -83,7 +83,7 @@ DO $$ DECLARE r record; BEGIN
 END $$;
 
 -- Bot-owned provider pool uses separate Vault secrets and a single active credential.
-DO $ DECLARE
+DO $$ DECLARE
   g uuid; r uuid; row record;
 BEGIN
   g := public.nexa_admin_api_save(NULL,'gemini','Google 1','gemini-3.5-flash-lite',NULL,'sk-google-demo-secret-123');
@@ -105,9 +105,9 @@ BEGIN
   ASSERT NOT has_function_privilege('anon','public.nexa_admin_api_active()','EXECUTE'), 'anon cannot decrypt';
   ASSERT NOT has_function_privilege('authenticated','public.nexa_admin_api_get(uuid)','EXECUTE'), 'authenticated cannot decrypt';
   ASSERT NOT has_table_privilege('anon','public.nexa_admin_api_keys','SELECT'), 'metadata private';
-END $;
+END $$;
 
-DO $ BEGIN ASSERT public.saeed_ai_schema_version() = '20261024180000', 'schema version'; END $$;
+DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261024180000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 DO $$ BEGIN INSERT INTO public.telegram_bot_preferences (telegram_user_id, keyboard_page) VALUES (43, 'guide'); END $$;
 ROLLBACK;
