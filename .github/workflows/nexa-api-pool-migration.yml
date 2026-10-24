@@ -30,7 +30,7 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg query "$q" '{query:$query}')" )"
-          test "$status" = 200 || { echo "::error::Could not read schema (HTTP $status)"; exit 1; }
+          { [ "$status" = 200 ] || [ "$status" = 201 ]; } || { echo "::error::Could not read schema (HTTP $status)"; exit 1; }
           live="$(jq -r '.[0].v // ""' before.json)"
           if [ "$live" = '20261024180000' ]; then
             echo 'Schema already applied'; exit 0
@@ -53,7 +53,7 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg query "$q" '{query:$query}')" )"
-          test "$status" = 200
+          { [ "$status" = 200 ] || [ "$status" = 201 ]; }
           test "$(jq -r '.[0].v // ""' after.json)" = '20261024180000' || {
             echo "::error::Schema version verification failed"; exit 1;
           }
