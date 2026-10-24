@@ -177,11 +177,17 @@ async function mutate(action: string, b: Record<string, unknown>) {
        (provider==="custom"&&!baseUrl)||key.length>512)
       return json({error:"Invalid details"},400);
     if(!id && key.length<12) return json({error:"API key required"},400);
-    if(key) {
-      const ok=await validatePersonalApiKey(provider,key,fetch,
-        provider==="custom"?{baseUrl:baseUrl!,model}:undefined);
-      if(!ok) return json({error:"Key / model connection test failed"},422);
+    let checkKey=key;
+    if(id&&!checkKey) {
+      const existing=await db.rpc("nexa_admin_api_get",{p_id:id});
+      dbCheck(existing);
+      const row=Array.isArray(existing.data)?existing.data[0]:existing.data;
+      if(!row||row.provider!==provider||!row.api_key) return json({error:"Credential not found"},404);
+      checkKey=String(row.api_key);
     }
+    const connected=await validatePersonalApiKey(provider,checkKey,fetch,
+      provider==="custom"?{baseUrl:baseUrl!,model}:undefined);
+    if(!connected) return json({error:"Key / model connection test failed"},422);
     const saved=await db.rpc("nexa_admin_api_save",{
       p_id:id,p_provider:provider,p_label:label,p_model:model,p_base_url:baseUrl,p_key:key||null,
     });
