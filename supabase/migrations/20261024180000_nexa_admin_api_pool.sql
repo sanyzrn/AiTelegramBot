@@ -57,7 +57,7 @@ DECLARE
   v_existing public.nexa_admin_api_keys%ROWTYPE;
   v_url text := NULLIF(btrim(p_base_url),'');
   v_name text;
-  v_vault_id uuid;
+  v_vault_id vault.secrets.id%TYPE;
 BEGIN
   IF p_provider NOT IN ('gemini','openrouter','custom')
      OR length(btrim(p_label)) NOT BETWEEN 1 AND 60
