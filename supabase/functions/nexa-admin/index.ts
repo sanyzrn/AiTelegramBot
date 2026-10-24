@@ -140,6 +140,12 @@ async function mutate(action: string, b: Record<string, unknown>) {
     },{onConflict:"telegram_user_id"}));
     return json({ok:true});
   }
+  if(action==="clear_user_access") {
+    const id=positiveId(b.id);
+    if(!id || String(id)===ACCESS.adminId) return json({error:"Invalid user"},400);
+    dbCheck(await db.from("telegram_bot_user_access").delete().eq("telegram_user_id",id));
+    return json({ok:true});
+  }
   if(action==="set_personal_key") {
     const id=positiveId(b.id);
     if(!id || String(id)===ACCESS.adminId || typeof b.enabled!=="boolean") return json({error:"Invalid user"},400);
