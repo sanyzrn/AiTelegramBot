@@ -7,6 +7,7 @@ import { readAccessEnv } from "../_shared/access.ts";
 import { createAdminSession, verifyAdminSession, verifyTelegramLogin } from "../_shared/nexa-admin-auth.ts";
 import { isProvider } from "../_shared/bot-config.ts";
 import { normalizeBaseUrl, isValidCustomModel } from "../_shared/openai-compat.ts";
+import { validatePersonalApiKey } from "../_shared/user-ai.ts";
 
 const TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const ACCESS = readAccessEnv(Deno.env);
@@ -57,15 +58,16 @@ async function overview() {
     timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(new Date());
   const since = new Date(Date.now() - 86400000).toISOString();
-  const [access, personal, usage, metrics, config, preferences] = await Promise.all([
+  const [access, personal, usage, metrics, config, preferences, pool] = await Promise.all([
     db.from("telegram_bot_user_access").select("telegram_user_id,enabled,daily_limit,updated_at").order("updated_at",{ascending:false}).limit(1000),
     db.from("telegram_bot_user_api").select("telegram_user_id,provider,base_url,model,enabled,updated_at").order("updated_at",{ascending:false}).limit(1000),
     db.from("telegram_bot_daily_usage").select("telegram_user_id,used").eq("usage_day",day).limit(1000),
     db.from("saeed_ai_metrics").select("telegram_user_id,status,input_tokens,output_tokens,provider").gte("created_at",since).limit(5000),
     db.from("telegram_bot_config").select("setting_key,setting_value").limit(50),
     db.from("telegram_bot_preferences").select("telegram_user_id").limit(1000),
+    db.from("nexa_admin_api_keys").select("id,provider,label,model,base_url,enabled,is_active,created_at,updated_at").order("created_at",{ascending:true}).limit(500),
   ]);
-  for(const r of [access,personal,usage,metrics,config,preferences]) dbCheck(r);
+  for(const r of [access,personal,usage,metrics,config,preferences,pool]) dbCheck(r);
 
   const settings: Record<string,string> = {};
   for (const r of config.data || []) settings[r.setting_key] = r.setting_value;
@@ -122,6 +124,7 @@ async function overview() {
       openrouter: !!Deno.env.get("OPENROUTER_API_KEY"),
       custom: !!Deno.env.get("CUSTOM_API_KEY"),
     },
+    credentials: pool.data || [],
     totals:{users:users.size,requests:(metrics.data||[]).length,success,failed,tokens},
     day,
     truncated: users.size >= 1000 || (metrics.data || []).length >= 5000,
@@ -160,15 +163,67 @@ async function mutate(action: string, b: Record<string, unknown>) {
     dbCheck(r);
     return json({ok:r.data===true});
   }
+  // Multiple bot-owned keys: API values never leave Vault in a response.
+  if(action === "credential_save") {
+    const provider=String(b.provider || "");
+    if(!isProvider(provider)) return json({error:"Invalid provider"},400);
+    const id=b.id == null ? null : String(b.id);
+    if(id!==null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+      return json({error:"Invalid credential ID"},400);
+    const label=String(b.label||"").trim(), model=String(b.model||"").trim();
+    const baseUrl=provider==="custom" ? normalizeBaseUrl(String(b.base_url||"")) : null;
+    const key=String(b.api_key||"").trim();
+    if(label.length<1||label.length>60||!isValidCustomModel(model)||
+       (provider==="custom"&&!baseUrl)||key.length>512)
+      return json({error:"Invalid details"},400);
+    if(!id && key.length<12) return json({error:"API key required"},400);
+    if(key) {
+      const ok=await validatePersonalApiKey(provider,key,fetch,
+        provider==="custom"?{baseUrl:baseUrl!,model}:undefined);
+      if(!ok) return json({error:"Key / model connection test failed"},422);
+    }
+    const saved=await db.rpc("nexa_admin_api_save",{
+      p_id:id,p_provider:provider,p_label:label,p_model:model,p_base_url:baseUrl,p_key:key||null,
+    });
+    dbCheck(saved);
+    return json({ok:true,id:saved.data});
+  }
+  if(action==="credential_test" || action==="credential_activate" || action==="credential_delete") {
+    const id=String(b.id||"");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+      return json({error:"Invalid credential ID"},400);
+    if(action==="credential_delete") {
+      if(b.confirm!=="DELETE") return json({error:"Confirmation required"},400);
+      const r=await db.rpc("nexa_admin_api_delete",{p_id:id});
+      dbCheck(r);return json({ok:r.data===true});
+    }
+    // Every activation is connection-tested; an invalid key never becomes default.
+    const res=await db.rpc("nexa_admin_api_get",{p_id:id});
+    dbCheck(res);
+    const row=Array.isArray(res.data)?res.data[0]:res.data;
+    if(!row||!isProvider(row.provider)||typeof row.api_key!=="string") return json({error:"Credential missing"},404);
+    const ok=await validatePersonalApiKey(row.provider,row.api_key,fetch,row.provider==="custom"
+      ?{baseUrl:String(row.base_url||""),model:String(row.model||"")}:undefined);
+    if(!ok)return json({ok:false,error:"Connection test failed"},422);
+    if(action==="credential_test") return json({ok:true});
+    const saved=await db.rpc("nexa_admin_api_activate",{p_id:id});
+    dbCheck(saved);return json({ok:saved.data===true});
+  }
+  if(action==="credential_use_legacy") {
+    const provider=String(b.provider||"");
+    if(!isProvider(provider)) return json({error:"Invalid provider"},400);
+    const envName=provider==="gemini"?"GEMINI_API_KEY":provider==="openrouter"?"OPENROUTER_API_KEY":"CUSTOM_API_KEY";
+    if(!Deno.env.get(envName)) return json({error:"No server Secret configured"},422);
+    const r=await db.rpc("nexa_admin_api_use_legacy",{p_provider:provider});
+    dbCheck(r);return json({ok:r.data===true});
+  }
   if(action==="save_setting") {
     const key=String(b.key||"");
     if(!["provider","model","openrouter_model","custom_model","custom_base_url","daily_limit","chat_search"].includes(key))
       return json({error:"Unsupported setting"},400);
     let value=String(b.value??"").trim();
     if(key==="provider") {
-      if(!isProvider(value)) return json({error:"Invalid provider"},400);
-      const envName=value==="gemini"?"GEMINI_API_KEY":value==="openrouter"?"OPENROUTER_API_KEY":"CUSTOM_API_KEY";
-      if(!Deno.env.get(envName)) return json({error:"Provider key not configured on server"},400);
+      return json({error:"Activate a saved key or an existing server Secret"},400);
     } else if(key==="daily_limit") {
       const n=Number(value);
       if(!Number.isInteger(n)||n<0||n>1000) return json({error:"Invalid limit"},400);
