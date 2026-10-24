@@ -5,10 +5,12 @@ on:
     paths:
       - '.github/workflows/shared-typecheck.yml'
       - 'supabase/functions/_shared/**'
+      - 'supabase/functions/nexa-admin/**'
   pull_request:
     paths:
       - '.github/workflows/shared-typecheck.yml'
       - 'supabase/functions/_shared/**'
+      - 'supabase/functions/nexa-admin/**'
 permissions:
   contents: read
 jobs:
@@ -34,4 +36,5 @@ jobs:
           set -euo pipefail
           # Every shared module, including the dispatcher, TTS and life modules.
           deno check supabase/functions/_shared/*.ts
+          deno check --config supabase/functions/nexa-admin/deno.json supabase/functions/nexa-admin/index.ts
           echo 'PASS: extracted modules typecheck without ts-nocheck'
