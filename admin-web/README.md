@@ -22,9 +22,11 @@ No PHP, .env, or Supabase service-role secret should be uploaded to the hosting 
 - Overview: users, requests, tokens, success stats, provider key availability
 - Users: lookup by Telegram ID, explicit allow/block/inherit, per-user limits
 - BYOK: view provider/model/status **without revealing secrets**, enable/disable, and permanently revoke personal keys
-- AI settings: Gemini / OpenRouter / Custom provider, models, custom HTTPS URL, global daily limit and Gemini chat search
+- API Vault: add unlimited named Gemini, OpenRouter or Custom credentials with independent models; test, edit, delete or select one active key
+- AI settings: select the active credential independently from global daily limits and Gemini chat search
+- Legacy credentials in Supabase Secrets stay selectable; they are never copied to the browser
 
-**Important:** Server-owned provider keys are *only* configured or rotated in **Supabase Edge Function Secrets**, not in this UI.
+**Important:** Newly added bot-owned credentials live encrypted in **Supabase Vault**. Older environment keys remain in **Supabase Edge Function Secrets** and are never revealed. Activating a saved credential switches the live bot provider; adding another credential does **not** auto-activate it. BYOK credentials belonging to individual users remain separate.
 
 ## Security
 
@@ -40,7 +42,9 @@ No PHP, .env, or Supabase service-role secret should be uploaded to the hosting 
 
 ## Production deployment
 
-The existing `.github/workflows/deploy-supabase.yml` deploys and health-checks the new `nexa-admin` Edge Function alongside the original four functions.
+The existing `.github/workflows/deploy-supabase.yml` deploys and health-checks `nexa-admin` alongside the original four functions.
+
+**v10.7 dependency:** Apply `supabase/migrations/20261024180000_nexa_admin_api_pool.sql` in Supabase **before merging/deploying the code**. The deployment workflow intentionally blocks a newer code release until `saeed_ai_schema_version()` returns `20261024180000`.
 
 The deployment trigger includes `supabase/functions/nexa-admin/**` and `supabase/config.toml`. The static frontend is intentionally deployed **separately** by uploading this folder to the user's hosting. Do not upload the entire repository.
 
@@ -50,4 +54,4 @@ The deployment trigger includes `supabase/functions/nexa-admin/**` and `supabase
 - Activity metrics are based on logged metrics and can be incomplete.
 - The summary fetches up to 1,000 users / 5,000 events per refresh. For a larger installation, add server-side pagination.
 - Mutations use the existing Supabase tables. There is no separate persistent admin audit trail in this initial version.
-- Global API secrets are never editable in the browser.
+- Legacy environment API secrets remain editable only in Supabase; newly added bot-owned Vault API credentials can be managed through this page.
