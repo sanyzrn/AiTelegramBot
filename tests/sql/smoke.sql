@@ -82,7 +82,32 @@ DO $$ DECLARE r record; BEGIN
   INSERT INTO public.saeed_ai_metrics (telegram_update_id, telegram_user_id, provider, model, status) VALUES (900001, 77, 'custom', 'my-model', 'success');
 END $$;
 
-DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261024180000', 'schema version'; END $$;
+-- Bot-owned provider pool uses separate Vault secrets and a single active credential.
+DO $ DECLARE
+  g uuid; r uuid; row record;
+BEGIN
+  g := public.nexa_admin_api_save(NULL,'gemini','Google 1','gemini-3.5-flash-lite',NULL,'sk-google-demo-secret-123');
+  r := public.nexa_admin_api_save(NULL,'openrouter','Router 1','openrouter/auto',NULL,'sk-router-demo-secret-123');
+  ASSERT g <> r, 'different keys have independent IDs';
+  ASSERT (SELECT count(*) FROM public.nexa_admin_api_keys) = 2, 'both credentials kept';
+  ASSERT public.nexa_admin_api_activate(g), 'activate first provider';
+  SELECT * INTO row FROM public.nexa_admin_api_active();
+  ASSERT row.provider='gemini' AND row.api_key='sk-google-demo-secret-123', 'active secret from Vault';
+  ASSERT public.nexa_admin_api_activate(r), 'switch provider without deleting previous key';
+  ASSERT (SELECT count(*) FROM public.nexa_admin_api_keys WHERE is_active) = 1, 'only one active globally';
+  ASSERT NOT public.nexa_admin_api_delete(r), 'active secret cannot be deleted';
+  g := public.nexa_admin_api_save(g,'gemini','Google edited','gemini-3.5-flash-lite',NULL,'sk-google-new-secret-123');
+  SELECT * INTO row FROM public.nexa_admin_api_get(g);
+  ASSERT row.api_key='sk-google-new-secret-123', 'existing Vault secret rotated';
+  ASSERT public.nexa_admin_api_delete(g), 'inactive Vault secret removed';
+  ASSERT public.nexa_admin_api_use_legacy('gemini'), 'legacy secret selectable';
+  ASSERT (SELECT count(*) FROM public.nexa_admin_api_keys WHERE is_active)=0, 'no active pool secret in legacy mode';
+  ASSERT NOT has_function_privilege('anon','public.nexa_admin_api_active()','EXECUTE'), 'anon cannot decrypt';
+  ASSERT NOT has_function_privilege('authenticated','public.nexa_admin_api_get(uuid)','EXECUTE'), 'authenticated cannot decrypt';
+  ASSERT NOT has_table_privilege('anon','public.nexa_admin_api_keys','SELECT'), 'metadata private';
+END $;
+
+DO $ BEGIN ASSERT public.saeed_ai_schema_version() = '20261024180000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 DO $$ BEGIN INSERT INTO public.telegram_bot_preferences (telegram_user_id, keyboard_page) VALUES (43, 'guide'); END $$;
 ROLLBACK;
