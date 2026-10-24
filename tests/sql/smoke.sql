@@ -82,7 +82,7 @@ DO $$ DECLARE r record; BEGIN
   INSERT INTO public.saeed_ai_metrics (telegram_update_id, telegram_user_id, provider, model, status) VALUES (900001, 77, 'custom', 'my-model', 'success');
 END $$;
 
-DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261005130000', 'schema version'; END $$;
+DO $$ BEGIN ASSERT public.saeed_ai_schema_version() = '20261024180000', 'schema version'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) FROM cron.job WHERE jobname IN ('telegram-chat-expire-15m','saeed-ai-v6-private-retention','saeed-ai-quota-prune','saeed-ai-reminders-every-minute')) = 4, 'cron jobs'; END $$;
 DO $$ BEGIN INSERT INTO public.telegram_bot_preferences (telegram_user_id, keyboard_page) VALUES (43, 'guide'); END $$;
 ROLLBACK;
