@@ -189,7 +189,7 @@
     $("dialogTitle").textContent=u?"مدیریت کاربر " + u.id:"افزودن کاربر";
     $("editId").value=u?.id || "";
     $("editId").readOnly=Boolean(u);
-    $("editAccess").value=u?.enabled===true?"enabled":u?.enabled===false?"disabled":"inherit";
+    $("editAccess").value=!u?"enabled":u.enabled===true?"enabled":u.enabled===false?"disabled":"inherit";
     $("editLimit").value=u?.limit == null?"":u.limit;
     const hasKey=Boolean(u?.provider);
     $("personalControls").classList.toggle("hidden",!hasKey);
