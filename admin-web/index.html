@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#111827">
   <title>Nexa Admin — مدیریت نکسا</title>
   <meta name="description" content="Nexa's private administration console">
-  <link rel="stylesheet" href="./styles.css">
-  <script src="./app.js" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=2">
+  <script src="./app.js?v=2" defer></script>
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
@@ -75,25 +75,69 @@
           </div>
         </section>
         <section id="providers" class="panel" aria-label="هوش مصنوعی و API">
-          <div class="headline"><div><div class="eyebrow">AI INFRASTRUCTURE / CONFIG</div><h1>هوش مصنوعی و API</h1><p>انتخاب Provider، مدل‌ها و محدودیت پیش‌فرض بات.</p></div></div>
-          <div class="surface settings-surface">
-            <div class="setting-heading"><div class="setting-icon">✳</div><div><h2>تنظیمات مدل و سرویس</h2><p class="muted">تغییرات پس از ذخیره، روی بات فعال اعمال می‌شود.</p></div></div>
-            <div class="settings-grid">
-              <label><span>ارائه‌دهنده اصلی بات</span><select id="settingProvider"><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / OpenAI-compatible</option></select></label>
-              <label><span>مدل Gemini</span><input id="settingGemini" type="text" spellcheck="false" placeholder="gemini-3.5-flash-lite"></label>
-              <label><span>مدل OpenRouter</span><input id="settingRouter" type="text" spellcheck="false" placeholder="google/gemma-4-26b-a4b-it:free"></label>
-              <label><span>مدل سفارشی</span><input id="settingCustomModel" type="text" spellcheck="false" placeholder="model-id"></label>
-              <label class="wide"><span>آدرس API سفارشی (HTTPS)</span><input id="settingCustomUrl" type="url" dir="ltr" spellcheck="false" placeholder="https://api.example.com/v1"></label>
-              <label><span>سقف روزانه پیش‌فرض (۰ = نامحدود)</span><input id="settingLimit" type="number" min="0" max="1000"></label>
-              <label class="toggle-line"><span>جستجوی اینترنتی چت Gemini</span><input id="settingSearch" type="checkbox"></label>
+          <div class="headline">
+            <div><div class="eyebrow">AI PROVIDERS / API VAULT</div>
+              <h1>مدیریت هوش مصنوعی</h1>
+              <p>کلیدها رو جدا ذخیره کن؛ فقط یکی رو برای استفاده اصلی بات فعال کن.</p>
             </div>
-            <div class="settings-footer"><span class="small-muted">کلیدهای API سرور فقط در Supabase Secrets نگه‌داری می‌شوند و اینجا نمایش داده نمی‌شوند.</span><button id="saveSettings" class="primary-button" type="button">ذخیره تنظیمات</button></div>
           </div>
-          <div class="notice"><span>i</span><div><b>API شخصی کاربران</b><p>کلید شخصی هر کاربر داخل Supabase Vault باقی می‌ماند. از بخش «کاربران» می‌توانید کلید را فعال/غیرفعال یا کامل لغو کنید؛ امکان مشاهده مقدار کلید وجود ندارد.</p></div></div>
+          <div class="active-api-banner">
+            <div class="active-api-mark">✦</div>
+            <div class="active-api-info">
+              <div class="active-api-caption">در حال استفاده برای کاربران عمومی</div>
+              <strong id="activeApiName">در حال بارگذاری...</strong>
+              <p id="activeApiMeta">تغییر کلید فعال بدون پاک‌شدن کلیدهای دیگر انجام می‌شود.</p>
+            </div>
+            <span class="pill allowed">● فعال</span>
+          </div>
+          <div class="pool-intro">
+            <h2>کلیدهای ذخیره‌شده</h2>
+            <p>به هر تعداد حساب و API اضافه کن؛ حتی چند کلید برای یک ارائه‌دهنده.</p>
+          </div>
+          <div id="credentialGroups" class="credential-groups" aria-live="polite"></div>
+          <section class="surface general-settings">
+            <div class="surface-heading"><div><h2>تنظیمات عمومی</h2><p class="small-muted">مستقل از انتخاب API و مدل</p></div></div>
+            <div class="settings-grid">
+              <label><span>سقف روزانه کاربران با API عمومی (۰ = نامحدود)</span><input id="settingLimit" type="number" min="0" max="1000"></label>
+              <label class="toggle-line"><span>جستجوی اینترنتی Gemini در چت</span><input id="settingSearch" type="checkbox"></label>
+            </div>
+            <div class="settings-footer"><span class="small-muted">کلیدها فقط در Vault یا Supabase Secrets هستند و هرگز اینجا نمایش داده نمی‌شوند.</span>
+              <button id="saveSettings" class="primary-button" type="button">ذخیره تنظیمات عمومی</button></div>
+          </section>
+          <div class="notice"><span>i</span><div><b>API شخصی کاربران، جدا از کلیدهای بات</b>
+            <p>کلیدهای BYOK کاربران در این لیست نیستند. فعال‌کردن کلید پیش‌فرض، API شخصی دیگران را تغییر نمی‌دهد.</p>
+          </div></div>
         </section>
       </div>
     </div>
   </div>
+
+  <dialog id="credentialDialog" class="edit-dialog credential-dialog">
+    <form id="credentialForm" method="dialog">
+      <div class="dialog-head"><div><div class="eyebrow">NEXA API VAULT</div><h2 id="credentialDialogTitle">افزودن API جدید</h2></div>
+        <button class="close-dialog" type="submit" value="cancel" aria-label="بستن">×</button>
+      </div>
+      <div id="credentialProviderName" class="provider-dialog-tag"></div>
+      <label>نام دلخواه برای شناسایی کلید
+        <input id="credentialLabel" maxlength="60" required placeholder="مثلاً Google اصلی یا حساب دوم">
+      </label>
+      <label>مدل مورد استفاده
+        <input id="credentialModel" maxlength="120" required spellcheck="false" dir="ltr" placeholder="gemini-3.5-flash-lite">
+      </label>
+      <label id="credentialUrlWrap" class="hidden">آدرس HTTPS سرویس سفارشی
+        <input id="credentialUrl" type="url" spellcheck="false" dir="ltr" placeholder="https://api.example.com/v1">
+      </label>
+      <label>API Key
+        <div class="secret-input"><input id="credentialKey" type="password" spellcheck="false" dir="ltr" autocomplete="off"
+          placeholder="کلید API را وارد کن"><button id="revealCredentialKey" type="button" aria-label="نمایش یا پنهان‌کردن کلید">نمایش</button></div>
+      </label>
+      <p id="credentialKeyHint" class="small-muted">قبل از ذخیره، اتصال واقعی این کلید تست می‌شود. کلید در Supabase Vault ذخیره خواهد شد.</p>
+      <div class="dialog-actions">
+        <button value="cancel" type="submit" class="outline-button">انصراف</button>
+        <button id="saveCredential" type="button" class="primary-button">تست و ذخیره</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="userDialog" class="edit-dialog">
     <form method="dialog" id="userForm">
