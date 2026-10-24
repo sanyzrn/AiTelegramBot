@@ -17,7 +17,7 @@
   };
   async function call(action, data = {}, token = state.token) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), action.startsWith("credential_") ? 30000 : 15000);
     try {
       const r = await fetch(API, {
         method: "POST",
